@@ -9,7 +9,7 @@
   :root{
     --bg:#0b1220; --panel:#131c2e; --panel2:#182238; --border:#1f2a44;
     --text:#dbe4f5; --muted:#7c8aa5; --red:#f04545; --green:#23b573;
-    --blue:#4f8cff; --teal:#2dd4bf;
+    --blue:#4f8cff; --teal:#2dd4bf; --gold:#f0a020;
   }
   *{margin:0;padding:0;box-sizing:border-box;}
   body{background:var(--bg);color:var(--text);font-family:"Microsoft YaHei","PingFang SC",system-ui,sans-serif;padding:14px 18px;min-width:1100px;}
@@ -23,7 +23,7 @@
   .topbar .spacer{flex:1;}
   .btn{border:none;border-radius:6px;padding:7px 14px;font-size:13px;cursor:pointer;color:#fff;background:#223052;transition:.15s;}
   .btn:hover{filter:brightness(1.2);}
-  .btn.blue{background:var(--blue);} .btn.green{background:#15915c;} .btn.teal{background:#0f766e;}
+  .btn.blue{background:var(--blue);} .btn.green{background:#15915c;} .btn.teal{background:#0f766e;} .btn.gold{background:var(--gold);}
   .btn.ghost{background:transparent;border:1px solid var(--border);color:var(--muted);}
 
   /* ===== 卡片通用 ===== */
@@ -366,8 +366,8 @@
   <button class="btn" data-act="openBatch">批量编辑</button>
   <button class="btn teal" data-act="exportData">导出</button>
   <button class="btn teal" data-act="clickImportFile">导入</button>
-  <button class="btn ghost" style="position:relative" data-act="openAlerts">提醒<span class="badge" id="alertBadge" style="display:none">0</span></button>
-  <button class="btn ghost" data-act="openDonate">打赏</button>
+  <button class="btn blue" style="position:relative" data-act="openAlerts">提醒<span class="badge" id="alertBadge" style="display:none">0</span></button>
+  <button class="btn gold" data-act="openDonate">☕ 打赏</button>
   <input type="file" id="importFile" accept=".json" style="display:none" data-evt="change" data-act="importData" data-args='["event"]'>
 </div>
 
