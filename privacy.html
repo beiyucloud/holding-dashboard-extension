@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>隐私政策 · 持仓实时盈亏看板</title>
+<meta name="description" content="持仓实时盈亏看板浏览器扩展隐私政策：所有数据本地存储，不上传任何服务器。">
+<style>
+  :root{--bg:#0b1220;--panel:#131c2e;--line:#1f2a44;--text:#e6ecf5;--muted:#9aa6bb;--blue:#4f8cff;--green:#23b573;}
+  *{box-sizing:border-box}
+  body{margin:0;font:15px/1.7 -apple-system,BlinkMacSystemFont,"Segoe UI","Microsoft YaHei",sans-serif;background:var(--bg);color:var(--text)}
+  .wrap{max-width:760px;margin:0 auto;padding:48px 24px 80px}
+  h1{font-size:26px;margin:0 0 8px;letter-spacing:.5px}
+  h2{font-size:17px;margin:32px 0 10px;padding:8px 0;border-bottom:1px solid var(--line);color:#fff}
+  p{margin:8px 0}
+  .meta{color:var(--muted);font-size:13px;margin:0 0 28px}
+  .pill{display:inline-block;padding:3px 10px;border-radius:999px;background:rgba(35,181,115,.12);color:var(--green);font-size:12px;margin-left:8px;vertical-align:middle}
+  code,strong{color:#fff}
+  code{background:#1a2440;padding:2px 6px;border-radius:4px;font-size:13px}
+  ul{padding-left:20px}
+  li{margin:4px 0}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:18px 22px;margin:18px 0}
+  a{color:var(--blue);text-decoration:none}
+  a:hover{text-decoration:underline}
+  footer{margin-top:40px;padding-top:18px;border-top:1px solid var(--line);color:var(--muted);font-size:13px;text-align:center}
+  @media(max-width:600px){.wrap{padding:32px 16px 60px}h1{font-size:22px}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>持仓实时盈亏看板<span class="pill">隐私政策</span></h1>
+  <p class="meta">生效日期：2026-08-15　|　最后更新：2026-08-15　|　中文版</p>
+
+  <p>「持仓实时盈亏看板」是一款浏览器扩展，用于在<strong>本地查看</strong>你自己录入的基金/股票持仓盈亏、估值与价格异动提醒。本页说明本扩展涉及的<strong>全部数据行为</strong>。</p>
+
+  <div class="card">
+    <h2>一句话总结</h2>
+    <p>本扩展<strong>不收集、不传输、不存储任何用户个人信息或持仓数据到任何服务器</strong>。所有数据只保存在你本机的浏览器里，扩展停用或卸载时数据可一键清除。</p>
+  </div>
+
+  <h2>1. 我们收集什么</h2>
+  <p>无。</p>
+  <ul>
+    <li>无个人身份信息（姓名、地址、邮箱、身份证号、IP 主动归集）</li>
+    <li>无金融信息</li>
+    <li>无位置信息</li>
+    <li>无网页浏览历史</li>
+    <li>无用户活动记录</li>
+    <li>无 cookie 或类似追踪机制</li>
+    <li>无任何形式的账号体系</li>
+  </ul>
+
+  <h2>2. 数据存储位置</h2>
+  <p>你录入的持仓代码、成本、数量与提醒阈值设置，全部保存在<strong>你本机浏览器</strong>的存储（<code>localStorage</code> 与 <code>chrome.storage</code>）中，仅在你本机可用。不会同步到任何云端，也不会被开发者或任何第三方访问。</p>
+  <p>卸载扩展或在扩展管理页点「清除数据」可彻底删除全部本地数据。</p>
+
+  <h2>3. 网络访问</h2>
+  <p>扩展仅在你需要刷新行情时，主动向你本机请求<strong>公开市场数据接口</strong>发起 <code>fetch</code> 请求，仅<strong>读取</strong>行情数值与文本：</p>
+  <ul>
+    <li>东方财富：<code>*.eastmoney.com</code></li>
+    <li>新浪财经：<code>*.sina.cn</code>、<code>*.sina.com.cn</code></li>
+    <li>腾讯财经：<code>*.gtimg.cn</code></li>
+  </ul>
+  <p>这些请求<strong>不携带你的任何身份信息</strong>，仅用于获取公开行情；扩展<strong>不会</strong>通过这些接口回传你的持仓、操作或任何其他数据。</p>
+  <p>扩展的 <code>declarativeNetRequest</code> 仅用于向前述公开行情接口补全必要的 <code>Referer</code> 请求头以通过其接口风控，规则集只声明这一类补头规则，<strong>不拦截、不修改、不读取</strong>用户的其他网络流量。</p>
+
+  <h2>4. 远程代码</h2>
+  <p>扩展<strong>不使用远程托管代码</strong>，不通过 <code>eval()</code> 执行服务端字符串，不向页面注入任何远程 <code>&lt;script&gt;</code> 标签。扩展包内的 <code>script-src</code> CSP 仅允许 <code>'self'</code>，<code>connect-src</code> 已显式限定为上文 4 个数据源域名。</p>
+
+  <h2>5. 第三方服务</h2>
+  <p>除上文所述的公开市场行情接口外，本扩展<strong>不集成任何第三方分析、广告或追踪服务</strong>。</p>
+
+  <h2>6. 捐赠</h2>
+  <p>扩展内「打赏」按钮仅展示作者个人微信赞赏二维码（<code>donate.png</code>）。是否捐赠完全<strong>自愿</strong>，与任何功能使用<strong>无关</strong>。我们不会收集扫码、打款或任何支付信息。</p>
+
+  <h2>7. 权限用途对照</h2>
+  <ul>
+    <li><code>notifications</code>：仅在用户设置的价格/估值阈值被触发时，由用户主动开启后用于浏览器桌面提醒。</li>
+    <li><code>storage</code>：仅用于在本地浏览器保存用户的持仓列表与提醒阈值设置。</li>
+    <li><code>declarativeNetRequest</code>：仅用于向公开行情接口补全 <code>Referer</code> 头，详见第 3 节。</li>
+  </ul>
+
+  <h2>8. 联系</h2>
+  <p>如有隐私相关疑问，可通过扩展商店支持邮箱联系我们（开发者注册邮箱见 Edge 加载项商店页面）。</p>
+
+  <h2>9. 政策变更</h2>
+  <p>本政策如有变更，将在扩展更新说明中告知，并同步更新本页与生效日期。</p>
+
+  <footer>© 2026 持仓实时盈亏看板　·　本扩展为本地工具，不提供网络服务</footer>
+</div>
+</body>
+</html>
