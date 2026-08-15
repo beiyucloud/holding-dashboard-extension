@@ -1284,14 +1284,48 @@ var stocks = (function(){
 function saveStocks(){ try{ localStorage.setItem(STK_KEY, JSON.stringify(stocks)); }catch(e){ console.error('[ext] saveStocks 失败:', e && e.message || e); toast('股票保存失败：存储已满或隐私模式'); } }
 var stockInfo = {}; /* code -> {name, price, prevClose, pct} */
 
+/* 规范股票/场内基金代码：自动补 sh/sz 前缀。支持 ETF/LOF/可转债/REITs 等场内品种
+   交易所映射（按前两位细分，因 1 开头既可能是沪市可转债 11，也可能是深市基金 15/16/18）：
+     沪市 sh：6 股票 / 5 基金(ETF·LOF·REITs) / 9 B股 / 11 可转债
+     深市 sz：0/3 股票(含创业板) / 2 B股 / 12 可转债 / 15 ETF / 16 LOF / 18 REITs / 10 国债(兜底) */
 function normStockCode(v){
   v = (v || '').trim().toLowerCase();
   if(/^(sh|sz)\d{6}$/.test(v)) return v;
   if(/^\d{6}$/.test(v)){
-    if(v[0] === '6') return 'sh' + v;
-    if(v[0] === '0' || v[0] === '3') return 'sz' + v;
+    var f2 = v.slice(0,2);
+    if(v[0] === '6' || v[0] === '5' || v[0] === '9') return 'sh' + v;   // 沪市：股票 / 基金 / B股
+    if(v[0] === '0' || v[0] === '3' || v[0] === '2') return 'sz' + v;   // 深市：股票 / 创业板 / B股
+    if(f2 === '11') return 'sh' + v;                                    // 沪市可转债
+    if(f2 === '12' || f2 === '15' || f2 === '16' || f2 === '18') return 'sz' + v; // 深市：可转债 / ETF / LOF / REITs
+    if(f2 === '10') return 'sz' + v;                                    // 兜底：深市国债等少见品种
   }
   return null;
+}
+
+/* 识别场内品种类型（股票 / 科创板 / 创业板 / ETF / LOF / REITs / 可转债 / 场内基金）
+   基于代码前缀规则粗分类；交易所由 normStockCode 统一判定，避免 1 开头混淆。
+   深市 15/16 等边界品种若识别不准，用户可在弹窗手动修正。 */
+function classifyStockType(rawCode){
+  var nc = normStockCode(rawCode);
+  if(!nc) return {cls:'other', label:'未知', exchName:''};
+  var c = nc.replace(/^(sh|sz)/, '');
+  var exch = nc.slice(0, 2);                                  // 'sh' | 'sz'
+  var exchName = exch === 'sh' ? '沪市' : '深市';
+  var f2 = c.slice(0,2), f3 = c.slice(0,3);
+  if(c[0] === '6'){ if(f3==='688'||f3==='689') return {cls:'stock', label:'科创板', exchName:exchName}; return {cls:'stock', label:'股票', exchName:exchName}; }
+  if(c[0] === '0') return {cls:'stock', label:'股票', exchName:exchName};
+  if(c[0] === '3') return {cls:'stock', label:'创业板', exchName:exchName};
+  if(exch==='sh' && f3==='508') return {cls:'reits', label:'REITs', exchName:exchName};
+  if(exch==='sz' && f3==='180') return {cls:'reits', label:'REITs', exchName:exchName};
+  if(exch==='sh' && (f3==='510'||f3==='511'||f3==='512'||f3==='513'||f3==='515'||f3==='516'||f3==='517'||f3==='518'||f3==='588'||f2==='56')) return {cls:'etf', label:'ETF', exchName:exchName};
+  if(exch==='sz' && (f3==='159'||f2==='15')) return {cls:'etf', label:'ETF', exchName:exchName};
+  if(exch==='sh' && (f3==='501'||f3==='502'||f2==='50')) return {cls:'lof', label:'LOF', exchName:exchName};
+  if(exch==='sz' && (f3==='160'||f3==='161'||f3==='163'||f3==='164'||f3==='165'||f3==='166'||f3==='167'||f3==='168'||f2==='16')) return {cls:'lof', label:'LOF', exchName:exchName};
+  if(exch==='sh' && f2==='11') return {cls:'bond', label:'可转债', exchName:exchName};
+  if(exch==='sz' && f2==='12') return {cls:'bond', label:'可转债', exchName:exchName};
+  if(exch==='sh' && c[0]==='5') return {cls:'fund', label:'场内基金', exchName:exchName};
+  if(exch==='sz' && c[0]==='1') return {cls:'fund', label:'场内基金', exchName:exchName};
+  return {cls:'other', label:'其他', exchName:exchName};
 }
 
 function renderStocks(){
@@ -1327,6 +1361,7 @@ function renderStocks(){
     if(s.cost && s.shares){ totCost += s.shares * s.cost; hasCost = true; }
     var _stkNm = (q && q.name) ? q.name : '加载中…';
     html += '<tr><td title="' + escHtml(_stkNm) + '">' + escHtml(_stkNm) + '</td>'
+          + '<td>' + typeTag(s.type) + '</td>'
           + '<td>' + s.code.replace(/^(sh|sz)/, '') + '</td>'
           + '<td>' + fmtNum(price) + '</td>'
           + '<td class="' + (pct !== null ? cls(pct) : 'muted') + '">' + (pct !== null ? fmtPct(pct) : '--') + '</td>'
@@ -1339,7 +1374,7 @@ function renderStocks(){
           + `<td><span class="link" data-act="openStockModal" data-args='["${s.code}"]'>编辑</span><span class="link" style="color:var(--red)" data-act="delStock" data-args='["${s.code}"]'>删除</span></td></tr>`;
   });
   if(stocks.length){
-    html += '<tr style="font-weight:700;background:#16203a"><td>合计</td><td></td><td></td><td></td><td></td><td></td>'
+    html += '<tr style="font-weight:700;background:#16203a"><td>合计</td><td></td><td></td><td></td><td></td><td></td><td></td>'
           + '<td>' + fmtNum(totMv) + '</td>'
           + '<td class="' + cls(totPnl) + '">' + (hasPnl ? fmtSigned(totPnl) : '--') + '</td>'
           + '<td></td>'
@@ -1495,27 +1530,52 @@ var editingStock = null;
 function openStockModal(code){
   editingStock = code || null;
   var s = code ? stocks.find(function(x){ return x.code === code; }) : null;
-  $('#stkModalTitle').textContent = s ? ('编辑股票 ' + code.replace(/^(sh|sz)/, '')) : '添加股票';
+  $('#stkModalTitle').textContent = s ? ('编辑 ' + (s.type ? classifyStockType(s.code).label + ' ' : '持仓 ') + code.replace(/^(sh|sz)/, '')) : '添加股票 / 场内基金';
   $('#inStkCode').value = s ? s.code : '';
   $('#inStkCode').disabled = !!s;
   $('#inStkShares').value = s && s.shares ? s.shares : '';
   $('#inStkCost').value = s && s.cost ? s.cost : '';
+  var sel = $('#inStkType');
+  if(sel){ sel.value = (s && s.type) ? s.type : (s ? classifyStockType(s.code).cls : 'stock'); sel.dataset.touched = s ? '1' : ''; }
   $('#maskStock').classList.add('show');
-  if(!s) $('#inStkCode').focus();
+  if(!s){ $('#inStkCode').focus(); }
+  updateStkTypeHint();
 }
 function closeStockModal(){
   $('#maskStock').classList.remove('show');
   $('#inStkCode').value=''; $('#inStkCode').disabled=false;
   $('#inStkShares').value=''; $('#inStkCost').value='';
+  var sel = $('#inStkType'); if(sel){ sel.value='stock'; sel.dataset.touched=''; }
+  var hint = $('#stkTypeHint'); if(hint){ hint.innerHTML=''; hint.className='stk-type-hint'; }
   editingStock = null;
+}
+/* 输入代码实时识别品种，并更新类型下拉默认值（用户未手动改过时） */
+function updateStkTypeHint(){
+  var hint = $('#stkTypeHint'); if(!hint) return;
+  var raw = ($('#inStkCode').value || '').trim();
+  var sel = $('#inStkType');
+  if(!raw){ hint.className='stk-type-hint'; hint.innerHTML=''; if(sel) sel.dataset.touched=''; return; }
+  var nc = normStockCode(raw);
+  if(!nc){ hint.className='stk-type-hint bad'; hint.innerHTML='⚠ 无法识别，请输入 6 位 A 股 / 场内基金代码'; if(sel) sel.dataset.touched=''; return; }
+  var t = classifyStockType(nc);
+  hint.className='stk-type-hint ok';
+  hint.innerHTML='识别为：<b>' + t.label + '</b>（' + t.exchName + '）';
+  if(sel && !sel.dataset.touched){ sel.value = t.cls; }
+}
+/* 类型标签小胶囊（渲染表格用） */
+function typeTag(cls){
+  var map = {stock:'股票', etf:'ETF', lof:'LOF', reits:'REITs', bond:'可转债', fund:'基金', other:'其他'};
+  return '<span class="tag tag-' + (cls || 'other') + '">' + (map[cls] || '其他') + '</span>';
 }
 function saveStock(){
   var code = editingStock || normStockCode($('#inStkCode').value);
-  if(!code){ alert('请输入 6 位股票代码（6 开头 = 沪市，0/3 开头 = 深市）'); return; }
+  if(!code){ alert('请输入 6 位代码（股票 / ETF / LOF / 可转债等场内品种均可）'); return; }
   var shares = parseFloat($('#inStkShares').value);
   var cost = parseFloat($('#inStkCost').value);
-  if(isNaN(shares) || shares <= 0){ alert('请输入有效的持仓股数'); return; }
-  var entry = { code: code, shares: shares, cost: (!isNaN(cost) && cost > 0) ? cost : null };
+  if(isNaN(shares) || shares <= 0){ alert('请输入有效的持仓数量'); return; }
+  var sel = $('#inStkType');
+  var type = (sel && sel.value) ? sel.value : classifyStockType(code).cls;
+  var entry = { code: code, shares: shares, cost: (!isNaN(cost) && cost > 0) ? cost : null, type: type };
   var idx = -1;
   stocks.forEach(function(s, i){ if(s.code === code) idx = i; });
   if(editingStock){
@@ -2042,7 +2102,7 @@ function importData(ev){
       holdings = fundArr.filter(function(x){ return /^\d{6}$/.test(x.code) && (x.amount > 0 || x.shares > 0); })
                      .map(function(x){ return {code: x.code, name: typeof x.name === 'string' ? x.name.trim().slice(0, 40) || undefined : undefined, shares: x.shares > 0 ? x.shares : null, cost: x.cost > 0 ? x.cost : null, amount: x.amount > 0 ? x.amount : null}; });
       stocks = stkArr.filter(function(x){ return normStockCode(x.code) && x.shares > 0; })
-                     .map(function(x){ return {code: normStockCode(x.code), shares: x.shares, cost: x.cost > 0 ? x.cost : null}; });
+                     .map(function(x){ var c = normStockCode(x.code); return {code: c, shares: x.shares, cost: x.cost > 0 ? x.cost : null, type: classifyStockType(c).cls}; });
       saveHoldings(); saveStocks(); refreshAll();
     }catch(e){ alert('导入失败：文件格式不正确'); }
   };
@@ -2053,6 +2113,14 @@ function importData(ev){
 updateAlertBadge();
 applyAuto();
 refreshAll();
+
+/* 添加股票弹窗：输入代码实时识别品种 / 手动改类型标记 */
+(function(){
+  var _inCode = document.getElementById('inStkCode');
+  if(_inCode) _inCode.addEventListener('input', updateStkTypeHint);
+  var _inType = document.getElementById('inStkType');
+  if(_inType) _inType.addEventListener('change', function(){ _inType.dataset.touched = '1'; });
+})();
 
 /* ============== 桌面组件模式 ==============
    以 ?widget 打开时进入窄栏常驻模式：隐藏非必要区块、锁定单栏，
