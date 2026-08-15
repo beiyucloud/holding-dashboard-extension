@@ -1,0 +1,587 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>持仓实时盈亏看板</title>
+<script src="./echarts.min.js"></script>
+<style>
+  :root{
+    --bg:#0b1220; --panel:#131c2e; --panel2:#182238; --border:#1f2a44;
+    --text:#dbe4f5; --muted:#7c8aa5; --red:#f04545; --green:#23b573;
+    --blue:#4f8cff; --teal:#2dd4bf;
+  }
+  *{margin:0;padding:0;box-sizing:border-box;}
+  body{background:var(--bg);color:var(--text);font-family:"Microsoft YaHei","PingFang SC",system-ui,sans-serif;padding:14px 18px;min-width:1100px;}
+  .up{color:var(--red);} .down{color:var(--green);} .muted{color:var(--muted);}
+
+  /* ===== 顶栏 ===== */
+  .topbar{display:flex;align-items:center;gap:14px;padding:6px 4px 14px;}
+  .topbar .dot{width:10px;height:10px;border-radius:50%;background:var(--blue);box-shadow:0 0 8px var(--blue);}
+  .topbar h1{font-size:19px;font-weight:700;letter-spacing:1px;}
+  .topbar .status{font-size:12px;color:var(--muted);border:1px solid var(--border);border-radius:4px;padding:2px 8px;}
+  .topbar .spacer{flex:1;}
+  .btn{border:none;border-radius:6px;padding:7px 14px;font-size:13px;cursor:pointer;color:#fff;background:#223052;transition:.15s;}
+  .btn:hover{filter:brightness(1.2);}
+  .btn.blue{background:var(--blue);} .btn.green{background:#15915c;} .btn.teal{background:#0f766e;}
+  .btn.ghost{background:transparent;border:1px solid var(--border);color:var(--muted);}
+
+  /* ===== 卡片通用 ===== */
+  .card{background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:16px 18px;}
+  .card .label{font-size:13px;color:var(--muted);margin-bottom:8px;}
+
+  .row1{display:grid;grid-template-columns:1.2fr 1.1fr 1.6fr;gap:14px;margin-bottom:14px;}
+  .mv-box{display:flex;align-items:center;gap:14px;}
+  .mv-icon{width:52px;height:52px;border-radius:50%;background:linear-gradient(135deg,#f6c453,#e8893a);display:flex;align-items:center;justify-content:center;font-size:22px;font-weight:700;color:#5b3a00;flex:none;}
+  .mv-num{font-size:26px;font-weight:700;letter-spacing:1px;}
+  .big-red{font-size:30px;font-weight:800;letter-spacing:1px;}
+  .big-red .big-red-main{display:inline-block;color:var(--muted);}
+  .big-red .big-red-main.up{color:var(--red);}
+  .big-red .big-red-main.down{color:var(--green);}
+  .big-red .pct-tail{font-size:18px;font-weight:700;margin-left:8px;letter-spacing:.5px;opacity:.9;}
+  .sub{font-size:12px;color:var(--muted);margin-top:6px;}
+  .mv-content{flex:1;min-width:0;}
+  .sub-dot{margin:0 6px;color:var(--border);}
+
+  /* 今日盈亏卡：label 同行放时间戳，下方按品种拆分 */
+  .label-flex{display:flex;justify-content:space-between;align-items:baseline;}
+  .label-flex .ts{font-size:11px;color:var(--muted);font-weight:400;}
+  .pnl-split{margin-top:8px;display:flex;flex-direction:column;gap:4px;font-size:12px;}
+  .pnl-row{display:flex;align-items:center;gap:6px;color:var(--muted);font-variant-numeric:tabular-nums;}
+  .pnl-row .dot{width:7px;height:7px;border-radius:50%;flex:none;}
+  .pnl-row .dot.f{background:#4f8cff;}
+  .pnl-row .dot.s{background:#e8a13a;}
+  .pnl-row .val{font-weight:700;margin-left:auto;}
+
+  /* 持仓市值卡内：盘中估算区块（与主数字视觉分层） */
+  .mv-est{margin-top:10px;padding:8px 10px;background:rgba(54,128,202,.10);border:1px solid rgba(54,128,202,.28);border-radius:6px;}
+  .mv-est-head{display:flex;justify-content:space-between;align-items:center;}
+  .mv-est-label{display:inline-flex;align-items:center;gap:5px;font-size:12px;color:var(--muted);}
+  .est-dot{width:6px;height:6px;border-radius:50%;background:var(--blue);animation:pulse 2s infinite;}
+  @keyframes pulse{0%,100%{opacity:1;}50%{opacity:.3;}}
+  .mv-est-delta{font-size:14px;font-weight:700;}
+  .mv-est-cmp{margin-top:5px;display:flex;align-items:baseline;gap:5px;font-size:11px;color:var(--muted);flex-wrap:wrap;}
+  .mv-est-cmp b{font-weight:700;color:var(--text);font-size:12px;font-variant-numeric:tabular-nums;}
+  .mv-est-cmp .cmp-arrow{color:var(--blue);font-weight:700;font-size:12px;margin:0 1px;}
+
+  /* 持仓市值卡内：累计盈亏 chip（独立深色框，避免与主数字视觉竞争） */
+  .mv-chip{margin-top:10px;padding:7px 10px;background:var(--bg);border:1px solid var(--border);border-radius:6px;display:flex;align-items:center;gap:6px;font-size:12px;flex-wrap:wrap;line-height:1.5;}
+  .mv-chip .chip-label{color:var(--muted);}
+  .mv-chip .chip-val{font-weight:700;font-size:13px;}
+  .mv-chip .chip-sep{color:var(--border);margin:0 4px;}
+
+  /* 图表卡 */
+  .chart-head{display:flex;justify-content:space-between;align-items:center;font-size:13px;color:var(--muted);}
+  .tag{display:inline-block;padding:1px 8px;border-radius:4px;font-size:12px;margin-left:6px;}
+  .tag.today{background:rgba(34,108,209,.15);color:#5b9dff;border:1px solid rgba(91,157,255,.4);}
+  .tag.pf{background:rgba(240,69,69,.15);color:var(--red);}
+  .tag.hs{background:rgba(47,168,120,.15);color:var(--green);}
+  #chart{height:120px;margin-top:4px;}
+  .chart-foot{display:flex;flex-direction:column;gap:3px;font-size:12px;color:var(--muted);margin-top:6px;padding-top:6px;border-top:1px dashed rgba(124,138,165,.25);}
+  .chart-foot .ft-row{display:flex;justify-content:space-between;align-items:center;gap:8px;}
+  .chart-foot .ft-row .ftv{font-weight:500;}
+  .chart-foot .ft-row .ft-hint{font-size:11px;opacity:.7;}
+  .chart-foot .ft-today .ft-hint, .chart-foot .ft-today .ft-lbl{color:var(--muted);}
+  .chart-foot .ft-mix{font-size:11px;opacity:.7;}
+
+  /* ===== 指数卡 ===== */
+  .sec-title{font-size:14px;font-weight:700;margin:4px 0 10px;padding-left:9px;border-left:3px solid var(--blue);}
+  .sec-title small{color:var(--muted);font-weight:400;margin-left:8px;font-size:12px;}
+  .idx-row{display:grid;grid-template-columns:repeat(7,1fr);gap:10px;margin-bottom:16px;}
+  .idx-card{background:var(--panel);border:1px solid var(--border);border-radius:8px;padding:10px 12px;}
+  .idx-card .nm{font-size:12px;color:var(--muted);display:flex;align-items:center;gap:5px;}
+  .idx-card .nm i{width:7px;height:7px;border-radius:50%;display:inline-block;}
+  .idx-card .price{font-size:16px;font-weight:700;margin:4px 0;}
+  .idx-card .chg{font-size:15px;font-weight:700;}
+  .idx-card .src{font-size:11px;color:var(--muted);margin-top:4px;}
+
+  /* ===== 底部三栏 ===== */
+  .row3{display:grid;grid-template-columns:1.3fr 1fr 1fr;gap:14px;margin-bottom:16px;}
+  .zd-num{display:flex;align-items:baseline;gap:10px;margin:6px 0;}
+  .zd-num .big{font-size:30px;font-weight:800;}
+  .zd-bar{height:8px;border-radius:4px;overflow:hidden;display:flex;background:var(--panel2);margin:8px 0;}
+  .zd-bar .u{background:var(--red);} .zd-bar .d{background:var(--green);}
+  .bk-item{display:flex;justify-content:space-between;align-items:center;padding:9px 4px;border-bottom:1px dashed var(--border);font-size:13px;}
+  .bk-item:last-child{border-bottom:none;}
+  .bk-item .rk{width:18px;height:18px;border-radius:4px;background:var(--panel2);color:var(--muted);font-size:11px;display:inline-flex;align-items:center;justify-content:center;margin-right:8px;}
+  .bk-item .sub2{font-size:11px;color:var(--muted);display:block;margin-top:2px;}
+
+  /* ===== 持仓表 ===== */
+  table{width:100%;border-collapse:collapse;font-size:13px;}
+  th{color:var(--muted);font-weight:400;text-align:right;padding:8px 10px;border-bottom:1px solid var(--border);white-space:nowrap;}
+  th:first-child,td:first-child{text-align:left;}
+  td{text-align:right;padding:9px 10px;border-bottom:1px solid #16203a;white-space:nowrap;}
+  tr:hover td{background:#162040;}
+  .link{color:var(--blue);cursor:pointer;font-size:12px;margin-left:8px;}
+
+  /* ===== 弹窗 ===== */
+  .mask{position:fixed;inset:0;background:rgba(0,0,0,.55);display:none;align-items:center;justify-content:center;z-index:99;}
+  .mask.show{display:flex;}
+  .modal{background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:22px;width:360px;}
+  .modal h3{font-size:15px;margin-bottom:6px;}
+  .modal .tip{font-size:12px;color:var(--muted);margin-bottom:14px;line-height:1.6;}
+  .modal input{width:100%;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text);padding:9px 10px;font-size:14px;margin-bottom:12px;outline:none;}
+  .modal input:focus{border-color:var(--blue);}
+  .modal .ops{display:flex;justify-content:flex-end;gap:10px;}
+  .modal.wide{width:720px;max-height:80vh;display:flex;flex-direction:column;}
+  .batch-scroll{overflow-y:auto;margin-bottom:12px;}
+  .batch-tabs{display:flex;gap:4px;margin-bottom:10px;border-bottom:1px solid var(--border);}
+  .batch-tab{background:transparent;border:none;padding:8px 18px;color:var(--muted);cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-1px;font-size:13px;}
+  .batch-tab.active{color:var(--blue);border-bottom-color:var(--blue);font-weight:600;}
+  .batch-tab:hover{color:var(--text);}
+  .batch-scroll table{font-size:12px;}
+  .batch-scroll td,.batch-scroll th{padding:6px 6px;}
+  .batch-scroll input{width:100%;background:var(--bg);border:1px solid var(--border);border-radius:5px;color:var(--text);padding:6px 8px;font-size:12px;outline:none;}
+  .batch-scroll input:focus{border-color:var(--blue);}
+  .batch-scroll input.code-in{width:76px;}
+  .row-del{color:var(--red);cursor:pointer;font-size:12px;white-space:nowrap;}
+
+  /* ===== 提醒 ===== */
+  .badge{position:absolute;top:-6px;right:-6px;background:var(--red);color:#fff;font-size:10px;min-width:16px;height:16px;line-height:16px;border-radius:8px;text-align:center;padding:0 3px;}
+  .set-row{display:flex;align-items:center;gap:8px;margin-bottom:10px;font-size:13px;flex-wrap:wrap;}
+  .set-row .lab{width:90px;flex:none;color:var(--muted);font-size:13px;}
+  .set-row .hint{color:var(--muted);font-size:12px;margin-left:4px;}
+  .set-row input[type=number]{width:72px;background:var(--bg);border:1px solid var(--border);border-radius:5px;color:var(--text);padding:5px 8px;font-size:13px;outline:none;}
+  .set-row select{background:var(--bg);border:1px solid var(--border);border-radius:5px;color:var(--text);padding:5px 8px;font-size:13px;outline:none;}
+  .chk{display:inline-flex;align-items:center;gap:5px;white-space:nowrap;margin-right:14px;color:var(--text);font-size:13px;}
+  /* 提醒设置专用：全局设置 + 自动刷新 + 提醒内容 三段并排（窄屏再换行） */
+  .alert-globals{display:grid;grid-template-columns:auto auto 1fr;gap:14px 18px;margin-bottom:10px;align-items:center;}
+  .alert-globals .g-item{display:flex;align-items:center;gap:6px;font-size:13px;}
+  .alert-globals .g-item .lab{width:auto;color:var(--muted);font-size:13px;}
+  .alert-globals .g-item input[type=number]{width:64px;}
+  .alert-globals .g-item select{padding:5px 8px;}
+  .alert-globals .g-chks{display:flex;align-items:center;flex-wrap:wrap;gap:2px 4px;}
+  .alert-globals .g-chks .chk{margin-right:12px;}
+  /* 单品种阈值 tab：紧凑 segmented control */
+  .alert-tabs{display:inline-flex;background:var(--bg);border:1px solid var(--border);border-radius:7px;padding:2px;gap:0;}
+  .alert-tabs button{background:transparent;border:none;color:var(--muted);padding:5px 14px;border-radius:5px;cursor:pointer;font-size:13px;line-height:1.3;transition:background .15s,color .15s;}
+  .alert-tabs button.active{background:var(--blue);color:#fff;font-weight:500;}
+  .alert-tabs button:not(.active):hover{color:var(--text);}
+  .alert-tabs .cnt{display:inline-block;background:rgba(0,0,0,.22);color:inherit;padding:0 6px;border-radius:9px;font-size:11px;margin-left:4px;min-width:14px;text-align:center;line-height:16px;height:16px;}
+  .alert-tabs button:not(.active) .cnt{background:var(--border);color:var(--muted);}
+  .alert-th-head{display:flex;align-items:center;gap:10px;margin:10px 0 6px;}
+  .alert-th-head .lab{color:var(--muted);font-size:13px;}
+  .alert-th-head .hint{color:var(--muted);font-size:11px;}
+  .alert-panel{display:none;}
+  .alert-panel.active{display:block;}
+  /* 阈值列表：紧凑 4 字段布局 */
+  .fund-th{font-size:12px;color:var(--muted);margin:0;}
+  .fund-th .empty{padding:8px 0;}
+  .fund-th .row{display:flex;align-items:center;gap:10px;padding:4px 0;}
+  .fund-th .row span{flex:1;color:var(--text);font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .fund-th .row .code{color:var(--muted);font-size:11px;margin-left:6px;flex:none;}
+  .fund-th input{width:64px;flex:none;background:var(--bg);border:1px solid var(--border);border-radius:5px;color:var(--text);padding:5px 8px;font-size:12px;outline:none;}
+  .alert-log{max-height:220px;overflow-y:auto;border-top:1px solid var(--border);padding-top:8px;}
+  .alert-item{padding:7px 4px;border-bottom:1px dashed var(--border);font-size:12px;line-height:1.5;}
+  .alert-item .t{color:var(--muted);margin-right:8px;}
+  .alert-item.unread{border-left:2px solid var(--red);padding-left:8px;}
+  .alert-item.old .t{opacity:.5;}
+  .monitor-scope{font-size:12px;color:var(--text);background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:9px 12px;margin:8px 0;line-height:1.6;}
+  .monitor-scope b{color:var(--blue);}
+  .monitor-scope .muted{margin-top:4px;}
+  .monitor-scope .stk-scope{margin-top:4px;}
+  .stk-scope{display:flex;flex-wrap:wrap;gap:5px;margin-top:4px;}
+  .stk-scope .chip{display:inline-flex;align-items:center;gap:4px;background:var(--card);border:1px solid var(--border);border-radius:14px;padding:2px 6px 2px 9px;font-size:12px;color:var(--text);}
+  .stk-scope .chip .x{display:inline-flex;align-items:center;justify-content:center;width:15px;height:15px;border-radius:50%;background:var(--border);color:var(--text);cursor:pointer;font-size:11px;line-height:1;opacity:.7;}
+  .stk-scope .chip .x:hover{opacity:1;background:var(--red);color:#fff;}
+  .stk-scope .chip.muted-chip{opacity:.55;}
+  .pct-note{font-size:12px;margin-left:8px;color:var(--muted);}
+  .pct-note.low{color:#e08a00;font-weight:600;}
+  #notifyState{cursor:pointer;}
+  #notifyState.ok{color:var(--green);}
+  #notifyState.warn{color:var(--muted);}
+  #saveAlertBtn:disabled{opacity:.45;cursor:not-allowed;}
+  .toast{position:fixed;left:50%;bottom:42px;transform:translateX(-50%) translateY(16px);background:rgba(20,22,28,.95);color:#fff;padding:10px 18px;border-radius:10px;font-size:14px;z-index:9999;opacity:0;transition:opacity .22s,transform .22s;pointer-events:none;box-shadow:0 6px 24px rgba(0,0,0,.35);white-space:nowrap;}
+  .toast.show{opacity:1;transform:translateX(-50%) translateY(0);}
+
+  .table-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch;}
+  .table-wrap table{min-width:720px;}
+
+  /* ===== 平板 ===== */
+  @media (max-width:1200px){
+    .row1{grid-template-columns:1fr 1fr;}
+    .idx-row{grid-template-columns:repeat(4,1fr);}
+  }
+  /* ===== 手机 ===== */
+  @media (max-width:768px){
+    body{min-width:0;padding:10px;}
+    .topbar{flex-wrap:wrap;gap:8px;}
+    .topbar h1{font-size:16px;width:100%;}
+    .topbar .spacer{display:none;}
+    .btn{padding:6px 10px;font-size:12px;}
+    .row1{grid-template-columns:1fr;gap:10px;}
+    .row3{grid-template-columns:1fr;gap:10px;}
+    .idx-row{grid-template-columns:repeat(2,1fr);gap:8px;}
+    .mv-num{font-size:22px;} .big-red{font-size:24px;}
+    .zd-num .big{font-size:24px;}
+    #chart{height:100px;}
+    .card{padding:12px 14px;}
+    .sec-title{font-size:13px;}
+    .sec-title small{display:block;margin-left:0;margin-top:2px;}
+    .modal,.modal.wide{width:94vw;padding:16px;}
+    .set-row{flex-wrap:wrap;}
+    .set-row .lab{width:100%;}
+    .alert-set{grid-template-columns:1fr;}
+  }
+
+  .footer{font-size:12px;color:var(--muted);padding:10px 4px 20px;line-height:1.8;}
+  .err{color:#e8a13a;font-size:12px;}
+
+  /* ===== 桌面组件模式（?widget 打开）===== */
+  body.widget-mode{ width:392px; min-width:0; max-width:392px; padding:8px 10px; overflow-y:auto; overflow-x:hidden; scrollbar-gutter:stable; }
+  body.widget-mode .topbar{ position:sticky; top:0; z-index:10; padding:4px 0 8px; background:var(--bg); }
+  body.widget-mode .topbar .btn:not(.blue){ display:none; }
+  body.widget-mode .topbar h1{ font-size:16px; }
+  body.widget-mode .sec-title:has(+ .idx-row),
+  body.widget-mode .idx-row,
+  body.widget-mode .row3,
+  body.widget-mode .footer{ display:none; }
+  body.widget-mode .sec-title small{ display:none; }
+  body.widget-mode .row1{ grid-template-columns:1fr; gap:10px; margin-bottom:10px; }
+  /* 持仓表在窄栏里收缩适配：取消 720px 最小宽度，字号缩小，按表隐藏次要列只留核心盈亏 */
+  body.widget-mode .table-wrap{ max-height:260px; overflow:auto; }
+  body.widget-mode .table-wrap table{ min-width:0 !important; width:100%; table-layout:fixed; font-size:11px; }
+  body.widget-mode .table-wrap th,
+  body.widget-mode .table-wrap td{ padding:3px 4px; overflow-wrap:anywhere; }
+  body.widget-mode .table-wrap th:last-child,
+  body.widget-mode .table-wrap td:last-child{ display:none; }
+  /* 基金表只留 名称/今日盈亏/估算涨幅（隐藏 代码/持有市值/持有收益率/累计盈亏/操作） */
+  body.widget-mode #fundTableWrap th:nth-child(2),
+  body.widget-mode #fundTableWrap td:nth-child(2),
+  body.widget-mode #fundTableWrap th:nth-child(3),
+  body.widget-mode #fundTableWrap td:nth-child(3),
+  body.widget-mode #fundTableWrap th:nth-child(6),
+  body.widget-mode #fundTableWrap td:nth-child(6),
+  body.widget-mode #fundTableWrap th:nth-child(7),
+  body.widget-mode #fundTableWrap td:nth-child(7){ display:none; }
+  /* 股票表只留 名称/涨跌幅/今日盈亏（隐藏 代码/现价/持仓股数/成本价/市值/持仓收益率/累计盈亏/操作） */
+  body.widget-mode #stockTableWrap th:nth-child(2),
+  body.widget-mode #stockTableWrap td:nth-child(2),
+  body.widget-mode #stockTableWrap th:nth-child(3),
+  body.widget-mode #stockTableWrap td:nth-child(3),
+  body.widget-mode #stockTableWrap th:nth-child(5),
+  body.widget-mode #stockTableWrap td:nth-child(5),
+  body.widget-mode #stockTableWrap th:nth-child(6),
+  body.widget-mode #stockTableWrap td:nth-child(6),
+  body.widget-mode #stockTableWrap th:nth-child(7),
+  body.widget-mode #stockTableWrap td:nth-child(7),
+  body.widget-mode #stockTableWrap th:nth-child(9),
+  body.widget-mode #stockTableWrap td:nth-child(9),
+  body.widget-mode #stockTableWrap th:nth-child(10),
+  body.widget-mode #stockTableWrap td:nth-child(10){ display:none; }
+  /* widget：名称列加宽且超长省略号，pnl/pct 列右对齐不换行，防文字重叠 */
+  body.widget-mode #fundTableWrap th:nth-child(1),
+  body.widget-mode #fundTableWrap td:nth-child(1){ width:48%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  body.widget-mode #fundTableWrap th:nth-child(4),
+  body.widget-mode #fundTableWrap td:nth-child(4){ width:32%; text-align:right; white-space:nowrap; }
+  body.widget-mode #fundTableWrap th:nth-child(5),
+  body.widget-mode #fundTableWrap td:nth-child(5){ width:20%; text-align:right; white-space:nowrap; }
+  body.widget-mode #stockTableWrap th:nth-child(1),
+  body.widget-mode #stockTableWrap td:nth-child(1){ width:40%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  body.widget-mode #stockTableWrap th:nth-child(4),
+  body.widget-mode #stockTableWrap td:nth-child(4){ width:25%; text-align:right; white-space:nowrap; }
+  body.widget-mode #stockTableWrap th:nth-child(8),
+  body.widget-mode #stockTableWrap td:nth-child(8){ width:35%; text-align:right; white-space:nowrap; }
+  /* widget 下隐藏名称列的估算来源后缀（实时估算/重仓估算等），给长名称让出空间；数据新鲜度仍由百分比列颜色传达 */
+  body.widget-mode #fundTableWrap td:nth-child(1) > span,
+  body.widget-mode #stockTableWrap td:nth-child(1) > span{ display:none; }
+  body.widget-mode #chart{ height:96px; }
+  body.widget-mode .mv-est-cmp{ display:none; }
+  body.widget-mode .demo-banner{ display:none; }
+  /* widget：缩小顶栏/卡片内边距/字号，保证 392px 内不溢出 */
+  body.widget-mode .topbar{ flex-wrap:wrap; gap:4px 8px; padding:2px 0 6px; }
+  body.widget-mode .topbar h1{ font-size:14px; flex:none; margin-right:2px; }
+  body.widget-mode .topbar .status{ font-size:10px; padding:1px 5px; }
+  body.widget-mode .topbar .btn{ padding:2px 6px; font-size:11px; }
+  body.widget-mode .card{ padding:8px 10px; }
+  body.widget-mode .mv-box{ gap:8px; }
+  body.widget-mode .mv-icon{ width:38px; height:38px; font-size:16px; }
+  body.widget-mode .mv-num{ font-size:20px; letter-spacing:0; }
+  body.widget-mode .sub{ font-size:10px; margin-top:4px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  body.widget-mode .mv-est{ padding:5px 7px; margin-top:6px; }
+  body.widget-mode .mv-est-label{ font-size:10px; }
+  body.widget-mode .mv-est-delta{ font-size:12px; }
+  body.widget-mode .mv-chip{ padding:4px 7px; font-size:10px; gap:4px; margin-top:6px; }
+  body.widget-mode .mv-chip .chip-val{ font-size:11px; }
+  body.widget-mode .big-red{ font-size:22px; }
+  body.widget-mode .label-flex{ flex-wrap:wrap; gap:2px; }
+  body.widget-mode .label-flex .ts{ font-size:9px; line-height:1.2; max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; display:block; }
+  body.widget-mode .pnl-row{ font-size:11px; }
+  body.widget-mode .pnl-row .val{ font-size:11px; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  /* widget 第二轮 fit：flex item 必须 min-width:0，否则 .ts / .val 把卡片撑爆；
+     chart 头部强制 wrap 让时间换行；表格头允许多行；脚注 mix 隐藏 */
+  body.widget-mode .row1 > .card{ overflow:hidden; }
+  body.widget-mode .label-flex{ width:100%; min-width:0; }
+  body.widget-mode .label-flex .label{ min-width:0; flex-shrink:1; }
+  body.widget-mode .label-flex .ts{ display:block; width:100%; min-width:0; max-width:100%; box-sizing:border-box; font-size:10px; line-height:1.3; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  body.widget-mode .chart-head{ flex-wrap:wrap; gap:2px 4px; font-size:11px; }
+  body.widget-mode .chart-head #chartTime{ flex-basis:100%; text-align:right; font-size:10px; }
+  body.widget-mode .table-wrap th{ white-space:normal; word-break:keep-all; line-height:1.2; }
+  body.widget-mode .ft-mix, body.widget-mode .ft-hint{ display:none; }
+  /* widget 第三轮 fit：表格 th 字号缩小让 4 字完整显示；ftv 真正收缩不撑爆；
+     pnl-row val 加 max-width 兜底防止溢出卡边 */
+  body.widget-mode .table-wrap th{ font-size:10px; padding:4px 4px 5px; }
+  body.widget-mode .ft-row{ min-width:0; gap:4px; }
+  body.widget-mode .ft-row .ftv{ min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:65%; font-size:11px; }
+  body.widget-mode .pnl-row .val{ max-width:55%; }
+  /* 窄栏下列宽微调：名称 48→44%，今日盈亏 32→30%，估算涨幅 20→26%（避免表头被切） */
+  body.widget-mode #fundTableWrap th:nth-child(1),
+  body.widget-mode #fundTableWrap td:nth-child(1){ width:44%; }
+  body.widget-mode #fundTableWrap th:nth-child(4),
+  body.widget-mode #fundTableWrap td:nth-child(4){ width:30%; }
+  body.widget-mode #fundTableWrap th:nth-child(5),
+  body.widget-mode #fundTableWrap td:nth-child(5){ width:26%; }
+  /* 股票表：名称 40→38%，今日盈亏 35→37% 给涨幅 25% 多点空间 */
+  body.widget-mode #stockTableWrap th:nth-child(1),
+  body.widget-mode #stockTableWrap td:nth-child(1){ width:38%; }
+  body.widget-mode #stockTableWrap th:nth-child(4),
+  body.widget-mode #stockTableWrap td:nth-child(4){ width:25%; }
+  body.widget-mode #stockTableWrap th:nth-child(8),
+  body.widget-mode #stockTableWrap td:nth-child(8){ width:37%; text-align:right; }
+</style>
+</head>
+<body>
+
+<!-- 顶栏 -->
+<div class="topbar">
+  <span class="dot"></span>
+  <h1>持仓实时盈亏看板</h1>
+  <span class="status" id="mktStatus">加载中…</span>
+  <span class="spacer"></span>
+  <button class="btn blue" data-act="refreshAll">刷新</button>
+  <button class="btn" data-act="openModal">+ 添加基金</button>
+  <button class="btn" data-act="openStockModal">+ 添加股票</button>
+  <button class="btn" data-act="openBatch">批量编辑</button>
+  <button class="btn teal" data-act="exportData">导出</button>
+  <button class="btn teal" data-act="clickImportFile">导入</button>
+  <button class="btn ghost" style="position:relative" data-act="openAlerts">提醒<span class="badge" id="alertBadge" style="display:none">0</span></button>
+  <input type="file" id="importFile" accept=".json" style="display:none" data-evt="change" data-act="importData" data-args='["event"]'>
+</div>
+
+<!-- 第一行：总览 -->
+<div class="row1">
+  <div class="card">
+    <div class="label">持仓市值（元）</div>
+    <div class="mv-box">
+      <div class="mv-icon">¥</div>
+      <div class="mv-content">
+        <div class="mv-num" id="totalMv">--</div>
+        <div class="sub">
+          <span id="holdCnt">--</span>
+          <span class="sub-dot">·</span>
+          <span id="navDate">最新净值 --</span>
+        </div>
+
+        <div class="mv-est" id="mvEstBox">
+          <div class="mv-est-head">
+            <span class="mv-est-label"><span class="est-dot"></span><span id="estLabel">盘中实时估算</span></span>
+            <span class="mv-est-delta" id="estDelta">--</span>
+          </div>
+          <div class="mv-est-cmp">
+            <span class="cmp-real">昨收 <b id="realMv">--</b></span>
+            <span class="cmp-arrow">→</span>
+            <span class="cmp-est">当前 <b id="estMv">--</b></span>
+          </div>
+        </div>
+
+        <div class="mv-chip" id="cumChip">
+          <span class="chip-label">累计盈亏</span>
+          <span class="chip-val" id="cumVal">--</span>
+          <span class="chip-sep">|</span>
+          <span class="chip-label">持有收益率</span>
+          <span class="chip-val" id="cumPct">--</span>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="card">
+    <div class="label-flex"><span class="label" id="todayLabel">今日盈亏（元）</span><span class="ts" id="pnlTime">--</span></div>
+    <div class="big-red" id="todayPnl">--</div>
+    <div class="pnl-split">
+      <div class="pnl-row"><i class="dot f"></i><span>基金</span><span class="val" id="pnlFund">--</span></div>
+      <div class="pnl-row"><i class="dot s"></i><span>股票</span><span class="val" id="pnlStock">--</span></div>
+    </div>
+  </div>
+  <div class="card">
+    <div class="chart-head">
+      <span>近 7 日累计收益率 <span class="tag today" id="tagToday">今日 --</span><span class="tag pf" id="tagPf">组合 --</span><span class="tag hs" id="tagHs">沪深300 --</span></span>
+      <span id="chartTime" class="muted"></span>
+    </div>
+    <div id="chart"></div>
+    <div class="chart-foot">
+      <div class="ft-row ft-today" id="ftToday"><span class="ft-lbl">今日</span> <span class="ftv">--</span><span class="muted ft-hint">= 顶部今日盈亏卡</span></div>
+      <div class="ft-row ft-7d" id="ft7d">近 7 日累计 <span class="ftv">组合 <span id="ftPf">--</span> · 沪深300 <span id="ftHs">--</span></span></div>
+      <div class="ft-row ft-diff" id="ftDiff">跑赢 <span class="ftv">--</span><span class="muted ft-mix" id="ftMix"></span></div>
+    </div>
+  </div>
+</div>
+
+<!-- 第二行：指数 -->
+<div class="sec-title">各主体实时<small>沪市主板 / 沪深300 / 创业板指 / 科创50 / 恒生科技 / 中证500 / 国际金价</small></div>
+<div class="idx-row" id="idxRow"></div>
+
+<!-- 第三行：涨跌家数 + 板块 -->
+<div class="row3">
+  <div class="card">
+    <div class="label">今日涨跌家数（沪深京全市场）</div>
+    <div class="zd-num">
+      <span class="big up" id="upCnt">--</span><span class="muted">涨 / 跌</span><span class="big down" id="downCnt">--</span>
+      <span class="muted" style="margin-left:auto" id="flatCnt">平盘 --</span>
+    </div>
+    <div class="zd-bar"><div class="u" id="barU" style="width:50%"></div><div class="d" id="barD" style="width:50%"></div></div>
+    <div class="sub" id="zdSub">上涨 -- · 下跌 --</div>
+    <div class="sub" id="zdDetail" style="margin-top:3px;font-size:11px;line-height:1.6;"></div>
+  </div>
+  <div class="card">
+    <div class="label">领涨板块 TOP3（行业板块）</div>
+    <div id="bkUp"></div>
+  </div>
+  <div class="card">
+    <div class="label">领跌板块 TOP3（行业板块）</div>
+    <div id="bkDown"></div>
+  </div>
+</div>
+
+<!-- 持仓明细 -->
+<div class="sec-title">我的基金<small>填「份额+成本价」可精确计算累计盈亏；只填市值则按市值估算今日盈亏</small></div>
+<div id="fundTableWrap" class="card table-wrap" style="margin-bottom:14px;">
+  <table>
+    <thead><tr><th>基金</th><th>代码</th><th>持有市值(元)</th><th>今日盈亏(元)</th><th>估算涨幅</th><th>持有收益率</th><th>累计盈亏(元)</th><th>操作</th></tr></thead>
+    <tbody id="holdBody"></tbody>
+  </table>
+</div>
+
+<!-- 股票持仓 -->
+<div class="sec-title">我的股票<small>实时行情为真实成交价（无估算偏差）；代码输 6 位数字，自动识别沪深</small></div>
+<div id="stockTableWrap" class="card table-wrap" style="margin-bottom:14px;">
+  <table>
+    <thead><tr><th>名称</th><th>代码</th><th>现价</th><th>涨跌幅</th><th>持仓股数</th><th>成本价</th><th>市值(元)</th><th>今日盈亏(元)</th><th>持仓收益率</th><th>累计盈亏(元)</th><th>操作</th></tr></thead>
+    <tbody id="stockBody"></tbody>
+  </table>
+</div>
+
+<div class="footer">
+  <div>看板版本 v28（2026-08-11）· 数据通道：<span id="srcStatus">检测中…</span>（若有 ✗ 请刷新重试）</div>
+  数据来源：新浪财经（盘中实时估算）· 天天基金移动端接口（净值/重仓股）· 腾讯行情（指数）· 东方财富（个股实时行情 / 涨跌家数 / 行业板块 / 国际金价）。<br>
+  计算口径：填份额时 今日盈亏 = 份额 ×（估算净值 − 昨日净值），持有收益率 = 当前估值市值 ÷（份额 × 成本价）− 1；未填份额时按「持有市值 × 估算涨幅」近似。<br>
+  「实时估算」为新浪基于基金前十大重仓股/债券/ETF 的加权估算（分钟级）；「重仓估算」为本页按前十大重仓股实时行情的自建兜底估算。估算均基于上季持仓，与实际净值有偏差，仅供参考。<br>
+  本看板仅为信息整理工具，不构成投资建议。市场有风险，投资需谨慎。
+</div>
+
+<!-- 添加/编辑基金弹窗 -->
+<div class="mask" id="mask">
+  <div class="modal">
+    <h3 id="modalTitle">添加基金</h3>
+    <div class="tip">填「持有份额 + 成本单价」最精确（份额和成本价可在基金 App 持仓页查看）；<br>不知道份额就只填「持有市值」，按市值近似估算。</div>
+    <input id="inCode" placeholder="基金代码，如 161725" maxlength="6">
+    <input id="inName" placeholder="基金名称（选填；接口拿不到时人工兜底）" maxlength="40">
+    <input id="inShares" placeholder="持有份额（选填），如 5230.66" type="number">
+    <input id="inCost" placeholder="成本单价（选填），如 1.2350" type="number" step="0.0001">
+    <input id="inAmount" placeholder="持有市值，元（未填份额时必填）" type="number">
+    <div class="ops">
+      <button class="btn ghost" data-act="closeModal">取消</button>
+      <button class="btn blue" data-act="saveFund">确定</button>
+    </div>
+  </div>
+</div>
+
+<!-- 批量编辑弹窗 -->
+<div class="mask" id="maskBatch">
+  <div class="modal wide">
+    <h3>批量编辑持仓</h3>
+    <div class="tip">中途买入/卖出后，直接修改对应行的「份额/股数」和「成本单价」；也可整行删除或新增持仓。全部改完点「保存全部」一次生效。</div>
+    <div class="batch-tabs">
+      <button class="batch-tab active" data-act="batchTab" data-args='["fund"]'>基金</button>
+      <button class="batch-tab" data-act="batchTab" data-args='["stock"]'>股票</button>
+    </div>
+    <div class="batch-scroll" id="batchFundPanel">
+      <table>
+        <thead><tr><th style="text-align:left">代码</th><th style="text-align:left">基金名称</th><th>持有份额</th><th>成本单价</th><th>持有市值(元)</th><th></th></tr></thead>
+        <tbody id="batchBody"></tbody>
+      </table>
+    </div>
+    <div class="batch-scroll" id="batchStockPanel" style="display:none">
+      <table>
+        <thead><tr><th style="text-align:left">代码</th><th style="text-align:left">股票名称</th><th>持有股数</th><th>成本单价</th><th>持有市值(元)</th><th></th></tr></thead>
+        <tbody id="batchStkBody"></tbody>
+      </table>
+    </div>
+    <div class="ops" style="display:flex;justify-content:space-between;">
+      <button class="btn ghost" data-act="batchAddRow">+ 加一行</button>
+      <span style="display:flex;gap:10px;">
+        <button class="btn ghost" data-act="closeBatch">取消</button>
+        <button class="btn blue" data-act="saveBatch">保存全部</button>
+      </span>
+    </div>
+  </div>
+</div>
+
+<!-- 添加/编辑股票弹窗 -->
+<div class="mask" id="maskStock">
+  <div class="modal">
+    <h3 id="stkModalTitle">添加股票</h3>
+    <div class="tip">输入 6 位代码自动识别沪深（6 开头 = 沪市，0/3 开头 = 深市）。<br>股票市值/盈亏按实时成交价计算，无估算偏差。</div>
+    <input id="inStkCode" placeholder="股票代码，如 600519" maxlength="8">
+    <input id="inStkShares" placeholder="持仓股数，如 1000" type="number">
+    <input id="inStkCost" placeholder="成本价（选填），如 1680.500" type="number" step="0.001">
+    <div class="ops">
+      <button class="btn ghost" data-act="closeStockModal">取消</button>
+      <button class="btn blue" data-act="saveStock">确定</button>
+    </div>
+  </div>
+</div>
+
+<!-- 提醒弹窗 -->
+<div class="mask" id="maskAlert">
+  <div class="modal wide">
+    <h3 style="margin-bottom:12px;">提醒设置</h3>
+
+    <!-- 顶部全局设置（紧凑 grid：阈值 / 刷新 / 提醒内容 并排） -->
+    <div class="alert-globals">
+      <div class="g-item"><span class="lab">全局阈值</span><input type="number" id="setPct" step="0.1" min="0.1" data-evt="input" data-fns="updatePctHint;onAlertChange"><span>%</span><span class="hint" style="margin-left:6px;font-size:11px">基金 2%~5%</span><span class="pct-note" id="pctNote"></span></div>
+      <div class="g-item"><span class="lab">自动刷新</span><select id="setAuto" data-evt="change" data-act="onAlertChange">
+          <option value="0">关闭</option><option value="1">每 1 分钟</option>
+          <option value="3">每 3 分钟</option><option value="5">每 5 分钟</option>
+        </select></div>
+      <div class="g-chks">
+        <label class="chk"><input type="checkbox" id="setNotice" data-evt="change" data-act="onAlertChange">基金公告</label>
+        <label class="chk"><input type="checkbox" id="setStockNotice" data-evt="change" data-act="onAlertChange">股票公告</label>
+        <label class="chk"><input type="checkbox" id="setSound" data-evt="change" data-act="onAlertChange">提示音</label>
+        <label class="chk"><input type="checkbox" id="setNotify" data-evt="change" data-act="onAlertChange">桌面通知 <span class="link" id="notifyState" data-act="requestNotifyPerm" data-args='["event"]'>（需授权）</span></label>
+      </div>
+    </div>
+
+    <!-- 监控摘要 -->
+    <div class="monitor-scope" id="monitorScope"></div>
+
+    <!-- 单品种阈值：tab 切换基金/股票 -->
+    <div class="alert-th-head">
+      <span class="lab">单品种阈值</span>
+      <div class="alert-tabs" id="alertThTabs">
+        <button type="button" data-act="setAlertThTab" data-args='["fund"]' class="active">基金 <span class="cnt" id="cntFund">0</span></button>
+        <button type="button" data-act="setAlertThTab" data-args='["stock"]'>股票 <span class="cnt" id="cntStock">0</span></button>
+      </div>
+      <span class="hint">留空 = 用全局阈值</span>
+    </div>
+    <div class="alert-panel active" id="alertFundPanel">
+      <div class="fund-th" id="fundThList"></div>
+    </div>
+    <div class="alert-panel" id="alertStockPanel">
+      <div class="fund-th" id="stockThList"></div>
+    </div>
+
+    <div class="ops" style="display:flex;justify-content:flex-end;gap:10px;margin:10px 0 16px;">
+      <button class="btn blue" id="saveAlertBtn" data-act="saveAlertSettings">保存设置</button>
+    </div>
+
+    <h3 style="display:flex;justify-content:space-between;align-items:center;">提醒记录
+      <span class="link" data-act="clearAlertLog">清空</span></h3>
+    <div class="alert-log" id="alertLog"></div>
+    <div class="ops" style="margin-top:14px;"><button class="btn ghost" data-act="closeAlerts">关闭</button></div>
+  </div>
+</div>
+
+<script src="./echarts.min.js"></script>
+<script src="./dashboard.js"></script>
+</body>
+</html>

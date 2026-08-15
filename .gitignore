@@ -1,0 +1,8 @@
+# Chrome 加载扩展时自动生成的规则索引缓存
+_metadata/
+# macOS / Windows 杂项
+.DS_Store
+Thumbs.db
+# 打包私钥与 crx（如自行打包）
+*.pem
+*.crx
