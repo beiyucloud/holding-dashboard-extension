@@ -1,8 +1,8 @@
 ❤️ 觉得好用？支持一下
-若 持仓实时盈亏看板 曾为你捕捉价值，不妨为它注入动力，助其持续进化
+若 持仓实时盈亏看板 曾为你提供价值，不妨为它注入动力，助其持续进化
 
 金额随意，1 元也是对开源的鼓励。欢迎在赞赏时备注留言 (´▽`ʃ♡ƪ)
-<img width="298" height="298" alt="donate" src="https://github.com/user-attachments/assets/d1286738-681e-4dc3-8713-bce8b3b2cbec" />
+<img width="245" height="245" alt="donate" src="https://github.com/user-attachments/assets/d1286738-681e-4dc3-8713-bce8b3b2cbec" />
 
 
 
