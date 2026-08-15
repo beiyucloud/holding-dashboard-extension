@@ -1849,6 +1849,9 @@ function closeAlerts(){
   }
   $('#maskAlert').classList.remove('show'); updateAlertBadge();
 }
+/* 打赏弹窗（点击顶部「打赏」按钮弹出，显示微信赞赏码） */
+function openDonate(){ $('#maskDonate').classList.add('show'); }
+function closeDonate(){ $('#maskDonate').classList.remove('show'); }
 /* —— 提醒设置：改动检测 / Toast / 桌面通知授权 —— */
 function serializeAlertForm(){
   var ov = {};
