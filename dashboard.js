@@ -2063,3 +2063,26 @@ refreshAll();
   if(!alerts.settings.autoMin){ alerts.settings.autoMin = 1; saveAlerts(); }
   applyAuto();
 })();
+
+/* ============== 防篡改自检 ==============
+   别人 fork 后若把打赏入口删掉、或把收款码(donate.png)换成他自己的，这里会当场暴露。
+   注：前端无法真正阻止改名覆盖文件，但「改动代码/移除入口」会被检测并提示使用者。 */
+(function integrityCheck(){
+  try{
+    var bad = [];
+    if(!document.querySelector('[data-act="openDonate"]')) bad.push('打赏按钮');
+    var m = document.getElementById('maskDonate');
+    if(!m){ bad.push('打赏弹窗'); }
+    else if(m.innerHTML.indexOf('donate.png') < 0){ bad.push('收款码引用'); }
+    if(bad.length){
+      console.warn('[看板] 检测到以下结构被非官方改动：' + bad.join('、'));
+      var btn = document.querySelector('[data-act="openDonate"]');
+      if(btn && !btn.dataset.warned){
+        btn.dataset.warned = '1';
+        btn.title = '⚠ 此看板文件已被非官方修改，打赏入口可能异常';
+        btn.style.outline = '2px solid #e8a13a';
+      }
+      try{ toast('⚠ 看板文件已被修改，打赏功能可能非官方'); }catch(e){}
+    }
+  }catch(e){}
+})();
