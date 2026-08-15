@@ -227,6 +227,14 @@
   .footer{font-size:12px;color:var(--muted);padding:10px 4px 20px;line-height:1.8;}
   .err{color:#e8a13a;font-size:12px;}
 
+  /* ===== 打赏区块（仅在完整看板底部显示，widget 小窗已隐藏 footer）===== */
+  .donate{margin-top:16px;padding-top:16px;border-top:1px dashed var(--border);text-align:center;}
+  .donate-title{font-size:14px;font-weight:600;color:var(--text);}
+  .donate-sub{font-size:12px;color:var(--muted);margin:5px 0 10px;line-height:1.6;}
+  .donate-qr{width:168px;height:168px;object-fit:contain;border:1px solid var(--border);border-radius:10px;background:#fff;cursor:zoom-in;}
+  .donate-tip{font-size:12px;color:var(--muted);line-height:1.7;}
+  .donate-tip code{background:var(--bg2);padding:1px 6px;border-radius:4px;font-size:11px;color:var(--text);}
+
   /* ===== 桌面组件模式（?widget 打开）===== */
   body.widget-mode{ width:392px; min-width:0; max-width:392px; padding:8px 10px; overflow-y:auto; overflow-x:hidden; scrollbar-gutter:stable; }
   body.widget-mode .topbar{ position:sticky; top:0; z-index:10; padding:4px 0 8px; background:var(--bg); }
@@ -466,6 +474,14 @@
   计算口径：填份额时 今日盈亏 = 份额 ×（估算净值 − 昨日净值），持有收益率 = 当前估值市值 ÷（份额 × 成本价）− 1；未填份额时按「持有市值 × 估算涨幅」近似。<br>
   「实时估算」为新浪基于基金前十大重仓股/债券/ETF 的加权估算（分钟级）；「重仓估算」为本页按前十大重仓股实时行情的自建兜底估算。估算均基于上季持仓，与实际净值有偏差，仅供参考。<br>
   本看板仅为信息整理工具，不构成投资建议。市场有风险，投资需谨慎。
+
+  <div class="donate">
+    <div class="donate-title">☕ 如果帮到你，可以请我喝杯咖啡</div>
+    <div class="donate-sub">本工具完全免费、数据全部存在你本地。觉得好用，欢迎随意打赏～</div>
+    <img class="donate-qr" src="./donate.png" alt="打赏收款码" title="微信 / 支付宝收款码"
+         onerror="this.style.display='none';this.nextElementSibling.style.display='block';">
+    <div class="donate-tip" style="display:none;">（把你的微信 / 支付宝收款码截图命名为 <code>donate.png</code> 放到扩展文件夹里，即可在此显示）</div>
+  </div>
 </div>
 
 <!-- 添加/编辑基金弹窗 -->
