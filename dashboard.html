@@ -231,15 +231,15 @@
   .donate{margin-top:14px;}
   .donate-card{background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:14px 16px;}
   .donate-row{display:flex;align-items:center;gap:16px;}
-  .donate-qr{width:108px;height:108px;flex-shrink:0;object-fit:contain;border-radius:8px;background:#fff;box-shadow:0 1px 4px rgba(0,0,0,.08);}
+  .donate-qr-wrap{width:108px;height:108px;flex-shrink:0;border-radius:8px;background:#fff;box-shadow:0 1px 4px rgba(0,0,0,.08);display:flex;align-items:center;justify-content:center;overflow:hidden;}
+  .donate-qr{width:108px;height:108px;object-fit:contain;}
+  .donate-qr-fallback{font-size:54px;line-height:1;color:var(--muted);display:none;}
   .donate-info{flex:1;min-width:0;}
   .donate-title{font-size:14px;font-weight:600;color:var(--text);margin-bottom:4px;}
   .donate-sub{font-size:12px;color:var(--muted);line-height:1.65;margin-bottom:6px;}
   .donate-channel{display:inline-block;font-size:11px;color:var(--muted);padding:2px 8px;border:1px solid var(--border);border-radius:10px;letter-spacing:.5px;}
-  .donate-noimg{font-size:12px;color:var(--muted);line-height:1.7;margin-top:2px;}
-  .donate-noimg code{background:var(--bg);padding:1px 5px;border-radius:3px;font-size:11px;color:var(--text);}
   .donate.noimg .donate-qr{display:none;}
-  .donate.noimg .donate-noimg{display:block;}
+  .donate.noimg .donate-qr-fallback{display:flex;}
 
   /* ===== 桌面组件模式（?widget 打开）===== */
   body.widget-mode{ width:392px; min-width:0; max-width:392px; padding:8px 10px; overflow-y:auto; overflow-x:hidden; scrollbar-gutter:stable; }
@@ -484,12 +484,14 @@
   <div class="donate" id="donateBlock">
     <div class="donate-card">
       <div class="donate-row">
-        <img class="donate-qr" src="./donate.png" alt="" onerror="document.getElementById('donateBlock').classList.add('noimg');">
+        <div class="donate-qr-wrap">
+          <img class="donate-qr" src="./donate.png" alt="" onerror="document.getElementById('donateBlock').classList.add('noimg');">
+          <div class="donate-qr-fallback">☕</div>
+        </div>
         <div class="donate-info">
           <div class="donate-title">☕ 请我喝杯咖啡</div>
           <div class="donate-sub">本工具完全免费、数据全部本地存储。<br>觉得好用，欢迎随意打赏～</div>
           <span class="donate-channel">微信 · 支付宝</span>
-          <div class="donate-noimg">还没有放收款码。<br>把你的微信 / 支付宝收款码截图命名为 <code>donate.png</code> 放到扩展文件夹即可显示。</div>
         </div>
       </div>
     </div>
