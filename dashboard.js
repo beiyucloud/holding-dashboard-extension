@@ -319,6 +319,12 @@ function calcRow(h, info){
   if(h.shares && info && (info.dwjz || info.gsz)){
     r.precise = true;
     r.mv = h.shares * (info.gsz || info.dwjz); /* 市值 = 份额 × 最新净值（盘中用估算gsz=当前值，盘后用确认净值；dwjz是昨收） */
+    /* 持有收益率 / 累计盈亏 用「已结算市值」：
+       NAV 已公布(estType='nav') → 取今日确认净值；未公布(盘中/盘后估值) → 取最近一个已确认净值(dwjz=上一交易日)。
+       这样盘中/盘后的实时估值不会晃动持有收益率，只在新净值公布后才更新（估值不显示这项） */
+    var settledMv = null;
+    if(info.estType === 'nav'){ settledMv = h.shares * info.gsz; }   /* 今日确认净值 */
+    else if(info.dwjz){ settledMv = h.shares * info.dwjz; }         /* 最近已确认净值（上一交易日） */
     if(info.estType === 'nav' && pct !== null){
       /* 盘后已结算 → 今日盈亏 = 市值 × 实际涨跌幅 */
       r.pnl = r.mv * pct / 100;
@@ -336,10 +342,10 @@ function calcRow(h, info){
     }else{
       r.prevMv = r.mv;
     }
-    if(h.cost){
+    if(h.cost && settledMv !== null){
       var cb = h.shares * h.cost;
-      r.cumPnl = r.mv - cb;
-      r.cumPct = (r.mv / cb - 1) * 100;
+      r.cumPnl = settledMv - cb;
+      r.cumPct = (settledMv / cb - 1) * 100;
     }
   }else{
     r.mv = h.amount || null;
