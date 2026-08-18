@@ -7,21 +7,25 @@ chrome.action.onClicked.addListener(function () {
    扩展页 (dashboard.js) 每次刷新完数据，把今日盈亏金额推过来；
    SW 调用 chrome.action.setBadgeText/setBadgeBackgroundColor 渲染在工具栏图标右上角。
    中国股市惯例：红涨绿跌，所以盈利=红底、亏损=绿底（与左侧"1.2k"那个红角标风格一致）。
-   Badge 文本限 4 字符：>=10000→w, >=1000→k, <1000 整数。金额<1 元或无效则清空角标。
+   格式：1 位小数四舍五入，|n|>=10000→w(1.2w), |n|>=1000→k(1.2k), |n|<1000 整数, |n|<1 或无效→空。
+   不带 +/- 符号——方向靠背景色红/绿区分（带符号 1.2k 是 5 字符，硬上限 4 字符带不动）。
    协议：-> {type:'updateBadge', pnl:number} */
 function fmtBadgePnl(pnl){
   if(pnl === null || pnl === undefined || !isFinite(pnl)) return '';
   var abs = Math.abs(pnl);
   if(abs < 1) return '';
-  var sign = pnl >= 0 ? '+' : '-';
   var s;
-  if(abs >= 10000){ s = Math.round(abs/10000) + 'w'; }       // 1w / 12w / 99w（整数 w，万以上同档）
-  else if(abs >= 1000){ s = Math.round(abs/1000) + 'k'; }    // 1k / 12k
-  else { s = Math.round(abs).toString(); }                    // 99 / 820
-  s = s.replace(/\.0(w|k)$/, '$1');                           // 1.0w → 1w；1.0k → 1k（防 toFixed 副作用）
-  var txt = sign + s;
-  // Chrome badge 硬上限 4 字符；>4 时再砍精度（理论上 w 分支已控住，截断为保底）
-  return txt.length > 4 ? txt.slice(0, 4) : txt;
+  if(abs >= 10000){
+    /* 1.2w（保留 1 位小数）；>100000 走整数 w 兜底（避免 5 字符超限） */
+    s = abs >= 100000 ? (Math.round(abs/10000) + 'w') : (Math.round(abs/1000)/10 + 'w');
+  }else if(abs >= 1000){
+    s = (Math.round(abs/100)/10 + 'k');              /* 1.2k */
+  }else{
+    s = Math.round(abs).toString();                   /* 1..999 整数 */
+  }
+  s = s.replace(/\.0(w|k)$/, '$1');                   /* 1.0k → 1k；1.0w → 1w（保底） */
+  // Chrome badge 硬上限 4 字符；>4 时再砍精度
+  return s.length > 4 ? s.slice(0, 4) : s;
 }
 function setBadge(pnl){
   var txt = fmtBadgePnl(pnl);

@@ -204,8 +204,8 @@ function escHtml(s){
 
 /* ================= 持仓存储 ================= */
 function loadHoldings(){
-  try{ var h = JSON.parse(localStorage.getItem(LS_KEY)); if(Array.isArray(h) && h.length) return h; }catch(e){}
-  try{ var old = JSON.parse(localStorage.getItem('fund_board_holdings_v1')); if(Array.isArray(old) && old.length) return old; }catch(e){}
+  try{ var raw = localStorage.getItem(LS_KEY); if(raw !== null){ var h = JSON.parse(raw); if(Array.isArray(h)) return h; } }catch(e){}
+  try{ var oldRaw = localStorage.getItem('fund_board_holdings_v1'); if(oldRaw !== null){ var old = JSON.parse(oldRaw); if(Array.isArray(old)) return old; } }catch(e){}
   return null;
 }
 function saveHoldings(){ try{ localStorage.setItem(LS_KEY, JSON.stringify(holdings)); }catch(e){ console.error('[ext] saveHoldings 失败:', e && e.message || e); toast('持仓保存失败：存储已满或隐私模式'); } }
@@ -456,7 +456,7 @@ function renderBk(el, list){
 
 /* ================= 渲染：持仓与汇总 ================= */
 function renderHoldings(){
-  var html = '', totalMv = 0, totalPnl = 0, totalCost = 0, hasCost = false, n = 0, anyTime = '', noGzCount = 0, holdEstCount = 0, closeEstCount = 0;
+  var html = '', totalMv = 0, totalPnl = 0, totalCost = 0, hasCost = false, n = 0, anyTime = '', noGzCount = 0, holdEstCount = 0, closeEstCount = 0, navTime = '';
   var prevMv = 0, cumAll = 0, ytdPnl = 0, ytdPrevMv = 0;
   holdings.forEach(function(h){
     var info = fundInfo[h.code];
@@ -466,6 +466,13 @@ function renderHoldings(){
     if(info && info.estType === 'holding'){ holdEstCount++; }
     if(info && info.estType === 'close'){ closeEstCount++; }
     if(info && info.gztime && !info.noGZ) anyTime = info.gztime;
+    /* nav 已公布 → 采集发布时间：日期取权威源 info.navDate(YYYY-MM-DD)，时分从 info.gztime 抓 HH:MM */
+    if(info && info.estType === 'nav' && info.navDate){
+      var _md = (info.navDate.length >= 10 ? info.navDate.slice(5, 10) : '');   /* "08-26" */
+      var _mm = /(\d{2}):(\d{2})/.exec(info.gztime || '');
+      var _vt = _md ? (_mm ? (_md + ' ' + _mm[1] + ':' + _mm[2]) : (_md + ' 已公布')) : '';
+      if(_vt && (!navTime || _vt > navTime)) navTime = _vt;
+    }
     if(c.mv !== null) totalMv += c.mv;
     if(c.pnl !== null) totalPnl += c.pnl;
     if(c.prevMv !== null) prevMv += c.prevMv;
@@ -534,7 +541,7 @@ function renderHoldings(){
   });
     return {
     totalMv: totalMv, totalPnl: totalPnl, prevMv: prevMv, pctAll: pctAll,
-    fundCount: n, anyTime: anyTime, noGzCount: noGzCount, holdEstCount: holdEstCount, closeEstCount: closeEstCount,
+    fundCount: n, anyTime: anyTime, navTime: navTime, noGzCount: noGzCount, holdEstCount: holdEstCount, closeEstCount: closeEstCount,
     hasPnl: hasPnl, hasCost: hasCost, totalCost: totalCost, cumAll: cumAll,
     latestNavDate: latestNavDate,
     ytdPnl: ytdPnl, ytdPrevMv: ytdPrevMv, ytdPct: ytdPrevMv > 0 ? ytdPnl / ytdPrevMv * 100 : 0
@@ -641,15 +648,20 @@ function isFundMktOpen(d){
   return (day>=1 && day<=5) && ((m>=570 && m<=690) || (m>=780 && m<=900));
 }
 
-function marketStatus(){
+function marketStatus(navTime){
   var now = new Date();
   var open = isFundMktOpen(now);
   var nd = now.getDay();
   var hm = now.getHours()*60 + now.getMinutes();
   var afterClose = (nd>=1 && nd<=5) && hm > 900;
-  $('#mktStatus').textContent = open ? '交易中 · 实时估值'
+  var baseLabel = open ? '交易中 · 实时估值'
     : afterClose ? '收盘后 · 显示收盘估值（待净值公布）'
     : (nd===0||nd===6 ? '周末 · 显示昨日净值' : '盘前/午休 · 显示昨日净值');
+  /* 收盘后真有基金 NAV 已公布 → 覆盖"待净值公布"标签，避免"永远待"的误读 */
+  if(navTime && afterClose && baseLabel.indexOf('收盘后') === 0){
+    baseLabel = '净值已公布 · ' + navTime;
+  }
+  $('#mktStatus').textContent = baseLabel;
   window.__fundIntraday = open;
 }
 
@@ -963,6 +975,7 @@ async function refreshAll(){
   }
   var sRes = renderStocks();
   var summ = updateSummary(sum, sRes);
+  marketStatus(sum.navTime);  /* 用本次拉到的"今日 NAV 发布时间"刷新顶部状态，覆盖"待净值公布"的永远待 */
 
   /* 3. 涨跌家数：沪(1.000001)+深(0.399001)+京(0.899050) 三市全量
         注：这三个 secid 拿到的是各自交易所的全市场统计，不是指数成分股 */
