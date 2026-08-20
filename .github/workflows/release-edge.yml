@@ -1,0 +1,154 @@
+name: release-edge
+
+# 触发条件：推 v* tag 时自动跑（如 git push origin v1.0.5）
+# 也可在 GitHub Actions 页面手动 dispatch
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: '要发布的 tag（如 v1.0.5）'
+        required: true
+        default: 'v1.0.5'
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 解析 tag
+        id: tag
+        run: |
+          if [ -n "${{ github.event.inputs.tag }}" ]; then
+            echo "name=${{ github.event.inputs.tag }}" >> $GITHUB_OUTPUT
+            echo "ref=${{ github.event.inputs.tag }}" >> $GITHUB_OUTPUT
+          else
+            echo "name=${GITHUB_REF##*/}" >> $GITHUB_OUTPUT
+            echo "ref=${GITHUB_REF}" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Checkout 仓库
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.tag.outputs.ref }}
+          fetch-depth: 0
+
+      - name: 准备 Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: 验证凭据存在
+        env:
+          EDGE_API_KEY: ${{ secrets.EDGE_API_KEY }}
+          EDGE_CLIENT_ID: ${{ secrets.EDGE_CLIENT_ID }}
+          EDGE_PRODUCT_ID: ${{ secrets.EDGE_PRODUCT_ID }}
+        run: |
+          [ -z "$EDGE_API_KEY" ] && echo "✗ 缺少 secret EDGE_API_KEY" && exit 1
+          [ -z "$EDGE_CLIENT_ID" ] && echo "✗ 缺少 secret EDGE_CLIENT_ID" && exit 1
+          [ -z "$EDGE_PRODUCT_ID" ] && echo "✗ 缺少 secret EDGE_PRODUCT_ID" && exit 1
+          echo "✓ 三个 secret 均已配置"
+
+      - name: 读取 manifest 版本号
+        id: ver
+        run: |
+          VER=$(python -c "import json;print(json.load(open('manifest.json'))['version'])")
+          echo "version=$VER" >> $GITHUB_OUTPUT
+          echo "✓ manifest 版本: $VER"
+
+      - name: 打 zip
+        run: |
+          ZIP_NAME="holding-dashboard-${{ steps.ver.outputs.version }}.zip"
+          # 排除开发文件 / 系统文件 / git 元数据
+          zip -r "$ZIP_NAME" . \
+            -x "*.git*" "*.github*" ".DS_Store" "Thumbs.db" \
+               "*.pem" "*.crx" "_metadata/*" "*.zip" \
+               "node_modules/*" ".vscode/*" ".idea/*"
+          echo "zip_name=$ZIP_NAME" >> $GITHUB_OUTPUT
+          ls -la "$ZIP_NAME"
+          unzip -l "$ZIP_NAME" | head -20
+
+      - name: 上传 + 提交审核
+        env:
+          EDGE_API_KEY: ${{ secrets.EDGE_API_KEY }}
+          EDGE_CLIENT_ID: ${{ secrets.EDGE_CLIENT_ID }}
+          EDGE_PRODUCT_ID: ${{ secrets.EDGE_PRODUCT_ID }}
+        run: |
+          # 内联 publish_edge.py 的 upload+publish 逻辑（避免 checkout 脚本路径耦合）
+          python << 'PYEOF'
+          import os, json, ssl, time, urllib.request, urllib.error, pathlib
+
+          API_ROOT = "https://api.addons.microsoftedge.microsoft.com"
+          PID = os.environ["EDGE_PRODUCT_ID"]
+          KEY = os.environ["EDGE_API_KEY"]
+          CID = os.environ["EDGE_CLIENT_ID"]
+          ZIP_NAME = "${{ steps.ver.outputs.version }}.zip"
+          # 找 zip（runner 上是 holding-dashboard-x.x.x.zip）
+          import glob
+          zips = glob.glob("holding-dashboard-*.zip")
+          assert zips, "找不到 zip"
+          ZIP_NAME = zips[0]
+          print(f"上传: {ZIP_NAME}")
+
+          ctx = ssl.create_default_context()
+
+          def call(method, path, body=None, ctype=None):
+              url = API_ROOT + path
+              h = {"Authorization": f"ApiKey {KEY}", "X-ClientID": CID, "User-Agent": "gh-action-release/1.0"}
+              if ctype: h["Content-Type"] = ctype
+              req = urllib.request.Request(url, data=body, headers=h, method=method)
+              try:
+                  with urllib.request.urlopen(req, context=ctx, timeout=120) as r:
+                      return r.status, dict(r.headers), r.read().decode("utf-8", "replace")
+              except urllib.error.HTTPError as e:
+                  return e.code, dict(e.headers), e.read().decode("utf-8", "replace")
+
+          # 1. 上传
+          data = pathlib.Path(ZIP_NAME).read_bytes()
+          st, hdrs, body = call("POST", f"/v1/products/{PID}/submissions/draft/package", body=data, ctype="application/zip")
+          print(f"[upload] HTTP {st}")
+          assert st == 202, f"上传失败: {body[:300]}"
+          loc = hdrs.get("Location") or hdrs.get("location") or ""
+          op_id = loc.rsplit("/", 1)[-1]
+          print(f"[upload] operationID: {op_id}")
+
+          # 2. 轮询上传
+          for _ in range(36):  # 最多 3 分钟
+              st, _, body = call("GET", f"/v1/products/{PID}/submissions/draft/package/operations/{op_id}")
+              if st == 200:
+                  d = json.loads(body)
+                  s = d.get("status") or d.get("State") or "Unknown"
+                  print(f"[upload poll] status={s}")
+                  if s.lower() != "inprogress": break
+              time.sleep(5)
+
+          # 3. 提交审核
+          st, hdrs, body = call("POST", f"/v1/products/{PID}/submissions", body=b"", ctype="application/json")
+          print(f"[publish] HTTP {st}")
+          assert st == 202, f"提交失败: {body[:300]}"
+          loc = hdrs.get("Location") or hdrs.get("location") or ""
+          op_id = loc.rsplit("/", 1)[-1]
+          print(f"[publish] operationID: {op_id}")
+          print("✓ 已提交审核，预计 7 个工作日过审")
+          PYEOF
+
+      - name: 上传 zip 到 workflow 产物（保留 30 天供下载）
+        uses: actions/upload-artifact@v4
+        with:
+          name: holding-dashboard-${{ steps.ver.outputs.version }}
+          path: holding-dashboard-*.zip
+          retention-days: 30
+
+      - name: 失败通知（issue 自动开一个）
+        if: failure()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: `Edge 自动发布失败 - ${{ steps.tag.outputs.name }}`,
+              body: `Workflow run: ${context.server_url}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}\n\n请人工登 Partner Center 检查，或重跑 workflow。`,
+              labels: ['release-failed']
+            })
