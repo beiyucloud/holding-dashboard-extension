@@ -539,7 +539,10 @@ function renderHoldings(){
     var nd = fundInfo[h.code] && fundInfo[h.code].navDate;
     if(nd && nd > latestNavDate) latestNavDate = nd;
   });
-    return {
+    /* 整段 section 显示控制：无任何基金持仓时连标题带表一起隐藏，
+     避免页面出现一个空"暂无持仓"卡片挤占视觉空间 */
+  $('#fundSection').style.display = holdings.length ? '' : 'none';
+  return {
     totalMv: totalMv, totalPnl: totalPnl, prevMv: prevMv, pctAll: pctAll,
     fundCount: n, anyTime: anyTime, navTime: navTime, noGzCount: noGzCount, holdEstCount: holdEstCount, closeEstCount: closeEstCount,
     hasPnl: hasPnl, hasCost: hasCost, totalCost: totalCost, cumAll: cumAll,
@@ -1170,7 +1173,7 @@ function batchRowHtml(h){
        + '<td><input data-f="shares" type="number" value="' + (h.shares || '') + '" placeholder="选填"></td>'
        + '<td><input data-f="cost" type="number" step="0.0001" value="' + (h.cost || '') + '" placeholder="选填"></td>'
        + '<td><input data-f="amount" type="number" value="' + (h.amount || '') + '" placeholder="无份额时必填"></td>'
-       + '<td><span class="row-del" data-act="rowDel">删除</span></td>';
+       + '<td><span class="row-del" data-act="rowDel" data-args=\'["event"]\'>删除</span></td>';
 }
 /* 股票批量编辑行：用户输 6 位数字，保存时 normStockCode 自动加 sh/sz 前缀 */
 function stockBatchRowHtml(s){
@@ -1182,7 +1185,7 @@ function stockBatchRowHtml(s){
        + '<td><input data-f="shares" type="number" step="1" value="' + (s.shares || '') + '" placeholder="必填"></td>'
        + '<td><input data-f="cost" type="number" step="0.001" value="' + (s.cost || '') + '" placeholder="选填"></td>'
        + '<td class="muted">' + mv + '</td>'
-       + '<td><span class="row-del" data-act="rowDel">删除</span></td>';
+       + '<td><span class="row-del" data-act="rowDel" data-args=\'["event"]\'>删除</span></td>';
 }
 /* 当前批量编辑 tab：'fund' | 'stock'，影响 batchAddRow / saveBatch / 面板显隐 */
 var _batchTab = 'fund';
@@ -1238,6 +1241,17 @@ function batchAddRow(){
   if(inp) inp.focus();
 }
 function closeBatch(){ $('#maskBatch').classList.remove('show'); }
+/* 批量编辑单行删除：移除当前 tr；保存时按剩余 tr 收集持仓，被删行自然不写入 */
+function rowDel(e){
+  var btn = (e && e.target && e.target.closest) ? e.target.closest('[data-act="rowDel"]') : null;
+  if(!btn) return;
+  var tr = btn.closest('tr');
+  if(!tr) return;
+  /* 如果删完一格都不剩，自动补一行空行方便继续编辑 */
+  var tb = tr.parentElement;
+  tr.remove();
+  if(tb && !tb.children.length && typeof batchAddRow === 'function'){ batchAddRow(); }
+}
 function saveBatch(){
   if(_batchTab === 'stock'){ return saveStockBatch(); }
   var rows = document.querySelectorAll('#batchBody tr');
@@ -1401,6 +1415,8 @@ function renderStocks(){
           + '<td></td></tr>';
   }
   $('#stockBody').innerHTML = html || '<tr><td colspan="11" class="muted" style="text-align:center;padding:20px">暂无股票持仓，点击右上角「添加股票」</td></tr>';
+  /* 整段 section 显示控制：无任何股票持仓时连标题带表一起隐藏 */
+  $('#stockSection').style.display = stocks.length ? '' : 'none';
   return {totalMv: totMv, totalPnl: totPnl, prevMv: totPrev, count: n, hasPnl: hasPnl, cum: totCum, totalCost: totCost, hasCost: hasCost,
     ytdPnl: ytdPnl, ytdPrevMv: ytdPrevMv, ytdPct: ytdPrevMv > 0 ? ytdPnl / ytdPrevMv * 100 : 0};
 }
@@ -1424,6 +1440,25 @@ function showYesterdayView(d){
   return t < 570; // 9:30 之前（盘前）：显示昨日盈亏
 }
 function updateSummary(fRes, sRes){
+  /* 「未持仓」分支：基金+股票都没添加时，三大信息区均显示占位提示，
+     避免股价为 0 / 累计 -- 等空跑视觉噪音 */
+  if(holdings.length === 0 && stocks.length === 0){
+    $('#totalMv').textContent = '0';
+    $('#holdCnt').textContent = '暂无持仓';
+    $('#navDate').textContent = '添加持仓后显示最新净值';
+    $('#estLabel').textContent = '盘中实时估算';
+    $('#realMv').textContent = '--'; $('#estMv').textContent = '--'; $('#estDelta').textContent = '';
+    $('#cumChip').style.background = ''; $('#cumChip').style.borderColor = '';
+    $('#cumVal').textContent = '录入份额+成本价'; $('#cumVal').className = 'chip-val muted';
+    $('#cumPct').textContent = '--'; $('#cumPct').className = 'chip-val muted';
+    $('#todayLabel').textContent = '今日盈亏（元）';
+    $('#todayPnl').innerHTML = '<span class="big-red-main muted" style="font-size:30px;letter-spacing:2px">未持仓</span>';
+    $('#pnlTime').textContent = '点击右上角「添加基金」或「添加股票」开始使用';
+    $('#pnlFund').textContent = '未持仓'; $('#pnlFund').className = 'val muted';
+    $('#pnlStock').textContent = '未持仓'; $('#pnlStock').className = 'val muted';
+    try{ chrome.runtime.sendMessage({type:'updateBadge', pnl: 0}); }catch(_){ /* SW 未运行也无妨 */ }
+    return {combMv: 0, combPnl: 0, combPct: 0, hasPnl: false, combYtdPnl: 0, combYtdPrevMv: 0, combYtdPct: 0, yView: false};
+  }
   var combMv = (fRes.totalMv || 0) + (sRes.totalMv || 0);
   var combPnl = (fRes.totalPnl || 0) + (sRes.totalPnl || 0);
   var combPrev = (fRes.prevMv || 0) + (sRes.prevMv || 0);
@@ -1484,19 +1519,28 @@ function updateSummary(fRes, sRes){
   if(!yView && fRes.noGzCount > 0){ pnlNote += ' · ' + fRes.noGzCount + ' 只无盘中估值（晚间净值更新后计入）'; }
   if(!yView && fRes.closeEstCount > 0){ pnlNote += ' · ' + fRes.closeEstCount + ' 只显示收盘估值（净值公布后修正）'; }
   $('#pnlTime').textContent = pnlNote;
-  /* 按品种拆分：基金 vs 股票（同口径随 yView 切昨日/今日） */
+  /* 按品种拆分：基金 vs 股票（同口径随 yView 切昨日/今日）
+     各自按"是否有持仓"独立判定：无持仓 → 「未持仓」灰色占位；有持仓 → 数值+颜色。
+     之前 if/else 嵌套在 sRes.count 上，导致「有股票无基金」时基金那行回退成 fmtSigned(0)="0" */
   var fSplit = yView ? (fRes.ytdPnl || 0) : fRes.totalPnl;
   var sSplit = yView ? (sRes.ytdPnl || 0) : sRes.totalPnl;
-  if(sRes.count > 0){
+  if(fRes.fundCount > 0){
     $('#pnlFund').textContent  = fmtSigned(fSplit, 0);
     $('#pnlFund').style.color  = clsTxt(fSplit);
+    $('#pnlFund').className    = 'val';
+  }else{
+    $('#pnlFund').textContent  = '未持仓';
+    $('#pnlFund').style.color  = '';
+    $('#pnlFund').className    = 'val muted';
+  }
+  if(sRes.count > 0){
     $('#pnlStock').textContent = fmtSigned(sSplit, 0);
     $('#pnlStock').style.color = clsTxt(sSplit);
+    $('#pnlStock').className   = 'val';
   }else{
-    $('#pnlFund').textContent  = fmtSigned(fSplit, 0);
-    $('#pnlFund').style.color  = clsTxt(fSplit);
     $('#pnlStock').textContent = '未持仓';
     $('#pnlStock').style.color = '';
+    $('#pnlStock').className   = 'val muted';
   }
   /* 盘后基金无估值时，0 不直观 — 改为 muted "待净值" 提示 */
   if(!yView && !fRes.hasPnl && fRes.fundCount > 0 && fRes.noGzCount === fRes.fundCount && !isFundMktOpen()){
@@ -1689,7 +1733,7 @@ function addAlert(msg, silent){
   alerts.log.unshift({time: ts, epoch: epoch, msg: msg, read: false});
   if(alerts.log.length > 100) alerts.log.length = 100;
   saveAlerts(); updateAlertBadge();
-  if(!silent){ beep(); pushNotify('基金看板提醒', msg); }
+  if(!silent){ beep(); pushNotify('持仓看板提醒', msg); }
 }
 
 /* 涨跌幅检查（refreshAll 渲染后调用） */
@@ -1965,7 +2009,7 @@ function updatePctHint(){
   var el = $('#setPct'), note = $('#pctNote');
   if(!el || !note) return;
   var v = parseFloat(el.value);
-  if(!isNaN(v) && v < 2){ note.textContent = '偏低，基金日常波动易触发噪音'; note.className = 'pct-note low'; }
+  if(!isNaN(v) && v < 2){ note.textContent = '偏低，持仓日内波动易触发噪音'; note.className = 'pct-note low'; }
   else { note.textContent = ''; note.className = 'pct-note'; }
 }
 function updateNotifyState(){
