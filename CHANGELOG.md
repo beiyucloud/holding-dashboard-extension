@@ -6,7 +6,14 @@
   - 顶部"当前提醒监控"块去除，每只基金/股票行的最右侧直接放「关闭提醒」按钮 / 停后变「恢复提醒」（行变灰）。同一只股票不再在两处出现。
   - 基金也补齐"单只停提醒"能力（新增 `fundMuted`，与 `stockMuted` 平行；`defaultAlerts` 默认 `{}`，估算涨幅循环跳过已停项）。
   - 实现：`dashboard.html` 删监控摘要 div + 旧 `.monitor-scope`/`.stk-scope` 样式、新增行内 `.row-act`/`.is-muted`，按钮由圆形 × 改为小文字标签（"关闭提醒"/"恢复提醒"，同 4 字宽避免抖动），窄屏(≤768px)减小间距与输入框宽度以避免按钮被裁；`dashboard.js` 删 `renderMonitorScope`，新增 `renderAlertRows` + `muteFundAlert`/`unmuteFundAlert` + `toggleRowMute`（局部切行，不重渲整个列表，避免把未保存的阈值输入清掉）。
-- **未发布**：本版本仅在本地 `ext/` 源码层更新（Edge Add-ons store 与 GitHub release 暂不推送，等你确认后再发）。
+- **扩展内新增「隐私政策」入口**
+  - 看板页脚新增「隐私政策」文字链接，点击在扩展内新标签页打开 `privacy.html`（本地文件、无需联网），与「数据全部存本地、不上云」的隐私主张一致。
+  - 同步将页脚展示用「看板版本」从 v32 升到 v33（2026-08-25）。
+- **CI：Edge 自动发布 workflow 修复**
+  - `.github/workflows/release-edge.yml` 增加 `permissions: { contents: read, issues: write }`，避免「失败通知」step（actions/github-script 创建 issue）因默认 GITHUB_TOKEN 只读而报 `Resource not accessible by integration`。
+  - 仓库 Secrets 补齐 `EDGE_API_KEY` / `EDGE_CLIENT_ID` / `EDGE_PRODUCT_ID`，以后推 `v*` tag 即可自动打包并向 Edge 商店提交审核。
+
+> 发布状态：已推送 GitHub（main + tag v1.0.5 + Release 含 zip/crx）；官网 beiyucloud.taoxinyuan.com 同步上线 v1.0.5；Edge 加载项商店审核中。
 
 ## v1.0.4（2026-08-19）
 
