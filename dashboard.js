@@ -1661,7 +1661,7 @@ function delStock(code){
 var ALERT_KEY = 'fund_board_alerts_v1';
 var alerts = (function(){
   try{ var a = JSON.parse(localStorage.getItem(ALERT_KEY)); if(a && a.settings) return a; }catch(e){}
-  return {settings:{pct:3, overrides:{}, stockOverrides:{}, notice:true, stockNotice:true, sound:true, notify:false, autoMin:0, stockMuted:{}},
+  return {settings:{pct:3, overrides:{}, stockOverrides:{}, notice:true, stockNotice:true, sound:true, notify:false, autoMin:0, stockMuted:{}, fundMuted:{}},
           log:[], seenNotice:{}, seenStockNotice:{}, fired:{}};
 })();
 migrateAlertLog();   /* 启动即清理旧版本误存的时间戳记录（如 "71-11"） */
@@ -1742,6 +1742,7 @@ function checkPriceAlerts(){
   var today = new Date();
   var ds = today.getFullYear() + '-' + ('0'+(today.getMonth()+1)).slice(-2) + '-' + ('0'+today.getDate()).slice(-2);
   holdings.forEach(function(h){
+    if(alerts.settings.fundMuted && alerts.settings.fundMuted[h.code]) return;  /* 已停提醒的基金跳过 */
     var info = fundInfo[h.code];
     if(!info || info.gszzl === null || isNaN(info.gszzl)) return;
     var th = (S.overrides[h.code] !== undefined && S.overrides[h.code] !== null) ? S.overrides[h.code] : S.pct;
@@ -1865,42 +1866,12 @@ function openAlerts(){
   $('#setStockNotice').checked = alerts.settings.stockNotice !== false;  /* 默认 true，老用户升级启用 */
   $('#setSound').checked = !!alerts.settings.sound;
   $('#setNotify').checked = !!alerts.settings.notify;
-  /* 单基金阈值（tab 内显示，tab 标题交给 segmented control 取代原页面标题） */
+  /* 单基金/股票阈值列表（合并了原顶部"仅停提醒"芯片：每行可直接 × 停提醒 / 停后变"恢复"） */
   $('#cntFund').textContent = holdings.length;
   $('#cntStock').textContent = stocks.length;
-  var fhtml = '';
-  holdings.forEach(function(h){
-    var info = fundInfo[h.code];
-    var v = alerts.settings.overrides[h.code];
-    fhtml += '<div class="row"><span>' + escHtml((info && info.name) || h.code) + '</span>'
-           + '<span class="code">' + h.code + '</span>'
-           + '<input type="number" step="0.1" min="0.1" data-code="' + h.code + '" value="' + (v !== undefined && v !== null ? v : '') + '" placeholder="全局">'
-           + '<span style="color:var(--muted);font-size:11px;flex:none">%</span></div>';
-  });
-  $('#fundThList').innerHTML = holdings.length ? fhtml : '<div class="empty muted">暂无基金持仓</div>';
-  $('#fundThList').querySelectorAll('input[data-code]').forEach(function(inp){
-    inp.addEventListener('input', onAlertChange);
-  });
-  /* 单股票阈值（同结构，stockOverrides 独立保存） */
-  var stkOv = alerts.settings.stockOverrides || {};
-  var shtml = '';
-  stocks.forEach(function(s){
-    var info = stockInfo[s.code];
-    var nm = (info && info.name) || s.code.replace(/^(sh|sz)/,'');
-    var v = stkOv[s.code];
-    var pureCode = s.code.replace(/^(sh|sz)/,'');
-    shtml += '<div class="row"><span>' + escHtml(nm) + '</span>'
-           + '<span class="code">' + pureCode + '</span>'
-           + '<input type="number" step="0.1" min="0.1" data-scode="' + s.code + '" value="' + (v !== undefined && v !== null ? v : '') + '" placeholder="全局">'
-           + '<span style="color:var(--muted);font-size:11px;flex:none">%</span></div>';
-  });
-  $('#stockThList').innerHTML = stocks.length ? shtml : '<div class="empty muted">暂无股票持仓</div>';
-  $('#stockThList').querySelectorAll('input[data-scode]').forEach(function(inp){
-    inp.addEventListener('input', onAlertChange);
-  });
+  renderAlertRows();
   /* 默认切回基金 tab（避免上次手动切到股票忘了切回去） */
   setAlertThTab('fund');
-  renderMonitorScope();
   renderAlertLog();
   updatePctHint();
   updateNotifyState();
@@ -1928,43 +1899,95 @@ function renderAlertLog(){
   });
   $('#alertLog').innerHTML = html || '<div class="muted" style="padding:12px 4px">暂无提醒记录</div>';
 }
-function renderMonitorScope(){
-  var fundN = holdings.length;
-  var stkN = stocks.length;
-  var muted = alerts.settings.stockMuted || {};
-  var active = stocks.filter(function(s){ return !muted[s.code]; });
-  var mutedList = stocks.filter(function(s){ return muted[s.code]; });
-  var html = '当前提醒监控：<b>' + fundN + '</b> 只基金'
-    + (stkN ? (' · <b>' + active.length + '</b> 只股票') : '');
-  if(active.length){
-    html += '<div class="muted">股票价格异动同样会提醒（点 × 仅停提醒，持仓保留）：</div><div class="stk-scope">';
-    active.forEach(function(s){
-      var nm = (stockInfo[s.code] && stockInfo[s.code].name) || s.code.replace(/^(sh|sz)/,'');
-      html += '<span class="chip">' + escHtml(nm) + '（' + s.code.replace(/^(sh|sz)/,'') + '）'
-            + `<span class="x" title="停止该股票的价格异动提醒（持仓保留）" data-act="muteStockAlert" data-args='["${s.code}"]'>×</span></span>`;
-    });
-    html += '</div>';
-  }
-  if(mutedList.length){
-    html += '<div class="muted" style="margin-top:8px">已停提醒（持仓仍在，点「恢复」重新监控）：</div><div class="stk-scope">';
-    mutedList.forEach(function(s){
-      var nm = (stockInfo[s.code] && stockInfo[s.code].name) || s.code.replace(/^(sh|sz)/,'');
-      html += '<span class="chip muted-chip">' + escHtml(nm) + '（' + s.code.replace(/^(sh|sz)/,'') + '）'
-            + `<span class="link" style="margin-left:2px" data-act="unmuteStockAlert" data-args='["${s.code}"]'>恢复</span></span>`;
-    });
-    html += '</div>';
-  }
-  $('#monitorScope').innerHTML = html;
+/* 渲染基金/股票阈值列表（合并了原顶部"仅停提醒"芯片：每行可直接 × 停提醒 / 停后变"恢复"） */
+function renderAlertRows(){
+  var fundMuted = alerts.settings.fundMuted || {};
+  var fundOv = alerts.settings.overrides || {};
+  var fhtml = '';
+  holdings.forEach(function(h){
+    var info = fundInfo[h.code];
+    var nm = (info && info.name) || h.code;
+    var v = fundOv[h.code];
+    var muted = !!fundMuted[h.code];
+    var act = muted
+      ? '<span class="row-act"><span class="link" data-act="unmuteFundAlert" data-args=\'["' + h.code + '"]\'>恢复提醒</span></span>'
+      : '<span class="row-act"><span class="x" title="仅停止该基金的涨跌提醒（持仓保留）" data-act="muteFundAlert" data-args=\'["' + h.code + '"]\'>关闭提醒</span></span>';
+    fhtml += '<div class="row' + (muted ? ' is-muted' : '') + '">'
+           + '<span>' + escHtml(nm) + '</span>'
+           + '<span class="code">' + escHtml(h.code) + '</span>'
+           + '<input type="number" step="0.1" min="0.1" data-code="' + h.code + '" value="' + (v !== undefined && v !== null ? v : '') + '" placeholder="全局">'
+           + '<span style="color:var(--muted);font-size:11px;flex:none">%</span>'
+           + act
+           + '</div>';
+  });
+  $('#fundThList').innerHTML = holdings.length ? fhtml : '<div class="empty muted">暂无基金持仓</div>';
+  $('#fundThList').querySelectorAll('input[data-code]').forEach(function(inp){
+    inp.addEventListener('input', onAlertChange);
+  });
+  var stkMuted = alerts.settings.stockMuted || {};
+  var stkOv = alerts.settings.stockOverrides || {};
+  var shtml = '';
+  stocks.forEach(function(s){
+    var info = stockInfo[s.code];
+    var nm = (info && info.name) || s.code.replace(/^(sh|sz)/,'');
+    var v = stkOv[s.code];
+    var pureCode = s.code.replace(/^(sh|sz)/,'');
+    var muted = !!stkMuted[s.code];
+    var act = muted
+      ? '<span class="row-act"><span class="link" data-act="unmuteStockAlert" data-args=\'["' + s.code + '"]\'>恢复提醒</span></span>'
+      : '<span class="row-act"><span class="x" title="仅停止该股票的价格异动提醒（持仓保留）" data-act="muteStockAlert" data-args=\'["' + s.code + '"]\'>关闭提醒</span></span>';
+    shtml += '<div class="row' + (muted ? ' is-muted' : '') + '">'
+           + '<span>' + escHtml(nm) + '</span>'
+           + '<span class="code">' + pureCode + '</span>'
+           + '<input type="number" step="0.1" min="0.1" data-scode="' + s.code + '" value="' + (v !== undefined && v !== null ? v : '') + '" placeholder="全局">'
+           + '<span style="color:var(--muted);font-size:11px;flex:none">%</span>'
+           + act
+           + '</div>';
+  });
+  $('#stockThList').innerHTML = stocks.length ? shtml : '<div class="empty muted">暂无股票持仓</div>';
+  $('#stockThList').querySelectorAll('input[data-scode]').forEach(function(inp){
+    inp.addEventListener('input', onAlertChange);
+  });
 }
 /* × 仅停该股票的价格异动提醒，不删持仓（删持仓走主界面股票表格的删除） */
 function muteStockAlert(code){
   if(!alerts.settings.stockMuted) alerts.settings.stockMuted = {};
   alerts.settings.stockMuted[code] = true;
-  saveAlerts(); renderMonitorScope();
+  saveAlerts(); toggleRowMute('stock', code, true);
 }
 function unmuteStockAlert(code){
   if(alerts.settings.stockMuted) delete alerts.settings.stockMuted[code];
-  saveAlerts(); renderMonitorScope();
+  saveAlerts(); toggleRowMute('stock', code, false);
+}
+/* 基金：停/恢复估算涨幅提醒（持仓保留），与股票一致 */
+function muteFundAlert(code){
+  if(!alerts.settings.fundMuted) alerts.settings.fundMuted = {};
+  alerts.settings.fundMuted[code] = true;
+  saveAlerts(); toggleRowMute('fund', code, true);
+}
+function unmuteFundAlert(code){
+  if(alerts.settings.fundMuted) delete alerts.settings.fundMuted[code];
+  saveAlerts(); toggleRowMute('fund', code, false);
+}
+/* 局部切换某行的"停/恢复"态（不动其它行，避免把未保存的阈值输入清掉） */
+function toggleRowMute(kind, code, muted){
+  var listId = kind === 'fund' ? '#fundThList' : '#stockThList';
+  var sel = kind === 'fund' ? 'input[data-code="' + code + '"]' : 'input[data-scode="' + code + '"]';
+  var inp = document.querySelector(listId + ' ' + sel);
+  if(!inp) return;
+  var row = inp.closest('.row');
+  if(!row) return;
+  row.classList.toggle('is-muted', muted);
+  var act = row.querySelector('.row-act');
+  if(!act) return;
+  var muteTag = kind === 'fund' ? 'muteFundAlert' : 'muteStockAlert';
+  var unmuteTag = kind === 'fund' ? 'unmuteFundAlert' : 'unmuteStockAlert';
+  var what = kind === 'fund' ? '基金' : '股票';
+  if(muted){
+    act.innerHTML = '<span class="link" data-act="' + unmuteTag + '" data-args=\'["' + code + '"]\'>恢复提醒</span>';
+  } else {
+    act.innerHTML = '<span class="x" title="仅停止该' + what + '的涨跌提醒（持仓保留）" data-act="' + muteTag + '" data-args=\'["' + code + '"]\'>关闭提醒</span>';
+  }
 }
 function closeAlerts(){
   if(window._alertSnap !== undefined && window._alertSnap !== serializeAlertForm()){

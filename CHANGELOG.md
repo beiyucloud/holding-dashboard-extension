@@ -1,5 +1,13 @@
 # 更新日志
 
+## v1.0.5（2026-08-25）
+### 优化
+- **提醒面板合并：顶部"仅停提醒"芯片并入单品种阈值行（基金/股票）**
+  - 顶部"当前提醒监控"块去除，每只基金/股票行的最右侧直接放「关闭提醒」按钮 / 停后变「恢复提醒」（行变灰）。同一只股票不再在两处出现。
+  - 基金也补齐"单只停提醒"能力（新增 `fundMuted`，与 `stockMuted` 平行；`defaultAlerts` 默认 `{}`，估算涨幅循环跳过已停项）。
+  - 实现：`dashboard.html` 删监控摘要 div + 旧 `.monitor-scope`/`.stk-scope` 样式、新增行内 `.row-act`/`.is-muted`，按钮由圆形 × 改为小文字标签（"关闭提醒"/"恢复提醒"，同 4 字宽避免抖动），窄屏(≤768px)减小间距与输入框宽度以避免按钮被裁；`dashboard.js` 删 `renderMonitorScope`，新增 `renderAlertRows` + `muteFundAlert`/`unmuteFundAlert` + `toggleRowMute`（局部切行，不重渲整个列表，避免把未保存的阈值输入清掉）。
+- **未发布**：本版本仅在本地 `ext/` 源码层更新（Edge Add-ons store 与 GitHub release 暂不推送，等你确认后再发）。
+
 ## v1.0.4（2026-08-19）
 
 ### 修复 / 优化

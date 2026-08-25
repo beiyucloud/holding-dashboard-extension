@@ -168,24 +168,30 @@
   /* 阈值列表：紧凑 4 字段布局 */
   .fund-th{font-size:12px;color:var(--muted);margin:0;}
   .fund-th .empty{padding:8px 0;}
-  .fund-th .row{display:flex;align-items:center;gap:10px;padding:4px 0;}
-  .fund-th .row span{flex:1;color:var(--text);font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .fund-th .row{display:flex;align-items:center;gap:8px;padding:4px 4px 4px 0;}
+  .fund-th .row span{flex:1;color:var(--text);font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0;}
   .fund-th .row .code{color:var(--muted);font-size:11px;margin-left:6px;flex:none;}
-  .fund-th input{width:64px;flex:none;background:var(--bg);border:1px solid var(--border);border-radius:5px;color:var(--text);padding:5px 8px;font-size:12px;outline:none;}
+  .fund-th input{width:60px;flex:none;background:var(--bg);border:1px solid var(--border);border-radius:5px;color:var(--text);padding:5px 8px;font-size:12px;outline:none;}
   .alert-log{max-height:220px;overflow-y:auto;border-top:1px solid var(--border);padding-top:8px;}
   .alert-item{padding:7px 4px;border-bottom:1px dashed var(--border);font-size:12px;line-height:1.5;}
   .alert-item .t{color:var(--muted);margin-right:8px;}
   .alert-item.unread{border-left:2px solid var(--red);padding-left:8px;}
   .alert-item.old .t{opacity:.5;}
-  .monitor-scope{font-size:12px;color:var(--text);background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:9px 12px;margin:8px 0;line-height:1.6;}
-  .monitor-scope b{color:var(--blue);}
-  .monitor-scope .muted{margin-top:4px;}
-  .monitor-scope .stk-scope{margin-top:4px;}
-  .stk-scope{display:flex;flex-wrap:wrap;gap:5px;margin-top:4px;}
-  .stk-scope .chip{display:inline-flex;align-items:center;gap:4px;background:var(--card);border:1px solid var(--border);border-radius:14px;padding:2px 6px 2px 9px;font-size:12px;color:var(--text);}
-  .stk-scope .chip .x{display:inline-flex;align-items:center;justify-content:center;width:15px;height:15px;border-radius:50%;background:var(--border);color:var(--text);cursor:pointer;font-size:11px;line-height:1;opacity:.7;}
-  .stk-scope .chip .x:hover{opacity:1;background:var(--red);color:#fff;}
-  .stk-scope .chip.muted-chip{opacity:.55;}
+  /* 阈值行末的"停提醒 / 恢复"控件（合并了原顶部芯片） */
+  .fund-th .row .row-act{flex:none;margin-left:auto;display:inline-flex;align-items:center;gap:6px;font-size:12px;}
+  .fund-th .row .row-act .x,
+  .fund-th .row .row-act .link{
+    display:inline-flex;align-items:center;justify-content:center;
+    padding:3px 9px;border-radius:4px;
+    font-size:12px;line-height:1;cursor:pointer;
+    white-space:nowrap;border:1px solid var(--border);
+    background:transparent;transition:color .15s,border-color .15s;
+  }
+  .fund-th .row .row-act .x{color:var(--muted);}
+  .fund-th .row .row-act .x:hover{color:var(--red);border-color:var(--red);}
+  .fund-th .row .row-act .link{color:var(--blue);}
+  .fund-th .row .row-act .link:hover{color:#5a8fcf;border-color:var(--blue);}
+  .fund-th .row.is-muted{opacity:.55;}
   .pct-note{font-size:12px;margin-left:8px;color:var(--muted);}
   .pct-note.low{color:#e08a00;font-weight:600;}
   #notifyState{cursor:pointer;}
@@ -223,6 +229,10 @@
     .set-row{flex-wrap:wrap;}
     .set-row .lab{width:100%;}
     .alert-set{grid-template-columns:1fr;}
+    /* 窄屏：阈值行更紧凑，避免「关闭提醒」按钮被裁 */
+    .fund-th .row{gap:6px;}
+    .fund-th .row .code{margin-left:2px;}
+    .fund-th input{width:54px;padding:4px 6px;}
   }
 
   .footer{font-size:12px;color:var(--muted);padding:10px 4px 20px;line-height:1.8;}
@@ -499,7 +509,7 @@
 </div>
 
 <div class="footer">
-  <div>看板版本 v31（2026-08-19）· 数据通道：<span id="srcStatus">检测中…</span>（若有 ✗ 请刷新重试）· <a href="https://beiyucloud.taoxinyuan.com" target="_blank" rel="noopener noreferrer" style="color:var(--blue);text-decoration:none">持仓实时盈亏看板</a></div>
+  <div>看板版本 v32（2026-08-25）· 数据通道：<span id="srcStatus">检测中…</span>（若有 ✗ 请刷新重试）· <a href="https://beiyucloud.taoxinyuan.com" target="_blank" rel="noopener noreferrer" style="color:var(--blue);text-decoration:none">持仓实时盈亏看板</a></div>
   数据来源：新浪财经（盘中实时估算）· 天天基金移动端接口（净值/重仓股）· 腾讯行情（指数）· 东方财富（个股实时行情 / 涨跌家数 / 行业板块 / 国际金价）。<br>
   计算口径：填份额时 今日盈亏 = 份额 ×（估算净值 − 昨日净值）（盘中/盘后显示实时估算）；持有收益率 = 已结算市值 ÷（份额 × 成本价）− 1，净值未公布时沿用上一交易日确认净值、不随盘中估值跳动，净值公布后自动更新；未填份额时按「持有市值 × 估算涨幅」近似。<br>
   「实时估算」为新浪基于基金前十大重仓股/债券/ETF 的加权估算（分钟级）；「重仓估算」为本页按前十大重仓股实时行情的自建兜底估算。估算均基于上季持仓，与实际净值有偏差，仅供参考。<br>
@@ -601,9 +611,6 @@
         <label class="chk"><input type="checkbox" id="setNotify" data-evt="change" data-act="onAlertChange">桌面通知 <span class="link" id="notifyState" data-act="requestNotifyPerm" data-args='["event"]'>（需授权）</span></label>
       </div>
     </div>
-
-    <!-- 监控摘要 -->
-    <div class="monitor-scope" id="monitorScope"></div>
 
     <!-- 单品种阈值：tab 切换基金/股票 -->
     <div class="alert-th-head">
