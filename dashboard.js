@@ -2193,7 +2193,7 @@ var noticeCtx = null; /* 当前打开的公告上下文，便于"重试"按钮�
 async function openNotice(artCode, title, nm, pureCode, date){
   artCode = String(artCode || '').trim();
   if(!artCode){ toast('该公告缺少详情编号'); return; }
-  noticeCtx = {artCode: artCode, title: title || '', nm: nm || '', pureCode: pureCode || '', date: date || ''};
+  noticeCtx = {artCode: artCode, title: title || '', nm: nm || '', pureCode: pureCode || '', date: date || '', attachUrl: null};
   $('#noticeTitle').textContent = title || ('公告详情 ' + artCode);
   var meta = [];
   if(nm || pureCode){
@@ -2203,20 +2203,42 @@ async function openNotice(artCode, title, nm, pureCode, date){
   meta.push('<span>art_code: ' + escHtml(artCode) + '</span>');
   $('#noticeMeta').innerHTML = meta.join('');
   $('#noticeBody').innerHTML = '<div class="notice-loading">正在加载公告正文…</div>';
+  /* 「打开原文」按钮初始态：拉取中、禁用；拿到 PDF 链接后再放出来并设 href。 */
   var orig = $('#noticeOriginal');
-  orig.href = 'https://data.eastmoney.com/notices/detail/' + encodeURIComponent(artCode) + '.html';
-  orig.setAttribute('data-artcode', artCode);
+  orig.removeAttribute('data-artcode');
+  orig.removeAttribute('data-attach');
+  orig.href = '#';
+  orig.setAttribute('aria-disabled', 'true');
+  orig.textContent = '正在加载 PDF 链接…';
   $('#maskNotice').classList.add('show');
   /* 异步拉详情 */
-  fetchNoticeBody(artCode).then(function(html){
-    if(!html){ renderNoticeError('公告正文为空'); return; }
+  fetchNoticeBody(artCode).then(function(res){
+    var html = res && res.html;
+    var attachUrl = res && res.attachUrl;
+    if(!html){ renderNoticeError('公告正文为空'); updateOrigBtn(orig, attachUrl); return; }
     /* 东财正文常带完整 <html>...</html>，内含 <head> 与样式资源。简单做法：整段塞进我们的弹层会被弹层样式覆盖掉，
        因此只提取 <body> 内部（如果存在），否则整段。保留 img / table / p / h2 等基础元素样式在 .notice-body 已有覆盖。 */
     var bodyHtml = extractBodyHtml(html);
     $('#noticeBody').innerHTML = bodyHtml;
+    updateOrigBtn(orig, attachUrl);
+    if(attachUrl){ noticeCtx.attachUrl = attachUrl; orig.setAttribute('data-artcode', artCode); orig.setAttribute('data-attach', attachUrl); }
   }).catch(function(err){
     renderNoticeError('加载失败：' + (err && err.message || err));
+    updateOrigBtn(orig, '');
   });
+}
+
+/* 「打开原文」按钮态切换：attachUrl 非空 → 可点 PDF；否则禁用 + 改文案。 */
+function updateOrigBtn(el, attachUrl){
+  if(attachUrl){
+    el.href = attachUrl;
+    el.removeAttribute('aria-disabled');
+    el.textContent = '打开 PDF 原文 ↗';
+  } else {
+    el.href = '#';
+    el.setAttribute('aria-disabled', 'true');
+    el.textContent = '此公告暂无 PDF 原文';
+  }
 }
 
 function renderNoticeError(msg){
@@ -2242,10 +2264,22 @@ function retryNotice(){
   if(!noticeCtx || !noticeCtx.artCode) return;
   var ac = noticeCtx.artCode;
   $('#noticeBody').innerHTML = '<div class="notice-loading">正在加载公告正文…</div>';
-  fetchNoticeBody(ac).then(function(html){
-    if(!html){ renderNoticeError('公告正文为空'); return; }
+  var orig = $('#noticeOriginal');
+  orig.removeAttribute('data-artcode');
+  orig.removeAttribute('data-attach');
+  orig.href = '#';
+  orig.setAttribute('aria-disabled', 'true');
+  orig.textContent = '正在加载 PDF 链接…';
+  fetchNoticeBody(ac).then(function(res){
+    var html = res && res.html, attachUrl = res && res.attachUrl;
+    if(!html){ renderNoticeError('公告正文为空'); updateOrigBtn(orig, attachUrl); return; }
     $('#noticeBody').innerHTML = extractBodyHtml(html);
-  }).catch(function(err){ renderNoticeError('加载失败：' + (err && err.message || err)); });
+    updateOrigBtn(orig, attachUrl);
+    if(attachUrl){ noticeCtx.attachUrl = attachUrl; orig.setAttribute('data-artcode', ac); orig.setAttribute('data-attach', attachUrl); }
+  }).catch(function(err){
+    renderNoticeError('加载失败：' + (err && err.message || err));
+    updateOrigBtn(orig, '');
+  });
 }
 
 /* 拉公告详情：东财 main detail endpoint；
@@ -2274,7 +2308,11 @@ function fetchNoticeBody(artCode){
     var html = (d.data && (d.data.notice_content || d.data.content || d.data.body || d.data.html))
             || d.notice_content || d.content || d.body || d.html || '';
     if(!html) throw new Error('未拿到正文');
-    return html;
+    /* 公告 PDF 原件 CDN 链接（浏览器内置 PDF viewer 直接渲染）——
+       「打开原文」按钮用这个，比 data.eastmoney.com/notices/detail/{artCode}.html 跳列表页靠谱
+       （实测该 HTML 路径被服务端 302 跳到 /notices/，用户在浏览器新标签看到的是列表页不是公告原文）。 */
+    var attachUrl = (d.data && (d.data.attach_url || d.data.attach_url_web)) || '';
+    return { html: html, attachUrl: attachUrl };
   });
 }
 

@@ -3,6 +3,7 @@
 ## v1.0.7（2026-08-26）
 ### 修复
 - **基金公告提醒精准打开修复**：基金品种的公告提醒之前借用了股票公告的全文搜索接口，对基金代码（如 110022）全文匹配会混入无关股票噪声（沈信股份 / 欣禧股份 / 汇源股份 / 盛航股份等，其办公地址邮编或财报科目序号里恰好含该数字串），点开公告详情是别人的公告而非基金自己的。修复：把 v49 为股票分支加的 `securityShortName === selfName` 严格匹配过滤扩展到基金分支（`fundInfo[code].name` 取自 fundmobapi `SHORTNAME`，与搜索 `securityShortName` 同一短名体系），噪声被拒、真基金公告（产品资料概要 / 季度报告 / 合同公告等）通过；详情接口 `np-cnotice-stock.eastmoney.com` 对基金 artCode 直接返回完整正文，无需换接口。
+- **公告弹窗「打开原文」按钮改用 PDF 原件链接**：之前按钮 href 写的是 `data.eastmoney.com/notices/detail/{artCode}.html`，实测该 HTML 路径已被东财服务端 302 跳转到 `/notices/` 公告列表页，用户在浏览器新标签看到的是东财公告列表而非海看股份自己的公告——形同未打开。修复：`fetchNoticeBody` 解析东财 API 返回时一并取 `data.attach_url` / `data.attach_url_web`（CDN 上的公告 PDF 原件链接，HTTP 200 + `application/pdf`，浏览器内置 PDF viewer 直接渲染），按钮 href 改为这个 PDF URL，文案改为「打开 PDF 原文 ↗」；新增 `updateOrigBtn(el, attachUrl)` helper 处理三态：拉取中（aria-disabled + "正在加载 PDF 链接…"）/ 拿到 PDF（放出来 + 新标签打开）/ 拉取失败或接口无 PDF（禁用 + 改文案提示）。按钮 CSS 加 `.btn[aria-disabled="true"]{opacity:.45;pointer-events:none;cursor:not-allowed;}`。
 - **语义版本号 1.0.6 → 1.0.7**（`manifest.json`）。
 
 > 发布状态：本地 `ext/` 已就绪（commit 待打 v1.0.7 tag），**待推送**——GitHub / 官网 / Edge 商店三处发布在收到「推送」指令后执行。

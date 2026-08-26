@@ -47,6 +47,7 @@
   .btn{border:none;border-radius:6px;padding:7px 14px;font-size:13px;cursor:pointer;color:var(--text);background:var(--btn);transition:.15s;}
   .btn:hover{filter:brightness(1.2);}
   .btn.blue{background:var(--blue);color:#fff;} .btn.green{background:#15915c;color:#fff;} .btn.teal{background:#0f766e;color:#fff;} .btn.gold{background:var(--gold);color:#fff;}
+  .btn[aria-disabled="true"]{opacity:.45;cursor:not-allowed;pointer-events:none;}
   .btn.ghost{background:transparent;border:1px solid var(--border);color:var(--muted);}
 
   /* ===== 卡片通用 ===== */
@@ -613,7 +614,7 @@
 </div>
 
 <div class="footer">
-  <div>看板版本 v53（2026-08-26）· 数据通道：<span id="srcStatus">检测中…</span>（若有 ✗ 请刷新重试）· <a href="https://beiyucloud.taoxinyuan.com" target="_blank" rel="noopener noreferrer" style="color:var(--blue);text-decoration:none">持仓实时盈亏看板</a> · <a href="privacy.html" target="_blank" rel="noopener noreferrer" style="color:var(--blue);text-decoration:none">隐私政策</a></div>
+  <div>看板版本 v54（2026-08-26）· 数据通道：<span id="srcStatus">检测中…</span>（若有 ✗ 请刷新重试）· <a href="https://beiyucloud.taoxinyuan.com" target="_blank" rel="noopener noreferrer" style="color:var(--blue);text-decoration:none">持仓实时盈亏看板</a> · <a href="privacy.html" target="_blank" rel="noopener noreferrer" style="color:var(--blue);text-decoration:none">隐私政策</a></div>
   数据来源：新浪财经（盘中实时估算）· 天天基金移动端接口（净值/重仓股）· 腾讯行情（指数）· 东方财富（个股实时行情 / 涨跌家数 / 行业板块 / 国际金价）。<br>
   计算口径：填份额时 今日盈亏 = 份额 ×（估算净值 − 昨日净值）（盘中/盘后显示实时估算）；持有收益率 = 已结算市值 ÷（份额 × 成本价）− 1，净值未公布时沿用上一交易日确认净值、不随盘中估值跳动，净值公布后自动更新；未填份额时按「持有市值 × 估算涨幅」近似。<br>
   「实时估算」为新浪基于基金前十大重仓股/债券/ETF 的加权估算（分钟级）；「重仓估算」为本页按前十大重仓股实时行情的自建兜底估算。估算均基于上季持仓，与实际净值有偏差，仅供参考。<br>
@@ -821,7 +822,7 @@
     <div class="notice-meta" id="noticeMeta"></div>
     <div class="notice-body" id="noticeBody"><div class="notice-loading">正在加载公告正文…</div></div>
     <div class="ops" style="margin-top:14px;">
-      <a class="btn blue" id="noticeOriginal" href="#" target="_blank" rel="noopener noreferrer">打开原文 ↗</a>
+      <a class="btn blue" id="noticeOriginal" href="#" target="_blank" rel="noopener noreferrer" aria-disabled="true">加载中…</a>
       <button class="btn ghost" data-act="closeNotice" style="margin-left:8px;">关闭</button>
     </div>
   </div>
