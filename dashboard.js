@@ -2071,9 +2071,11 @@ async function checkNoticeAlerts(kind){
       var fresh = [];
       list.forEach(function(n){
         if(!n || !n.code || !n.title) return;
-        /* 股票公告过滤：剔除"重仓股里出现该股"的基金公告 noise（接口按纯文本关键词搜）。
-           判定标准：接口返回的 securityShortName 与股票简称严格一致 → 视为该股公告。 */
-        if(kind === 'stock' && selfName){
+        /* 严格匹配过滤（股票 + 基金共用）：剔除"重仓股里出现该股 / 办公地址邮编含此基金代码 / 财报科目序号"等 noise。
+           搜索接口按纯文本关键词搜，对基金代码同样会命中无关股票公告（公司办公地址邮编 110022、报表科目 110022 等），
+           必须用 securityShortName 严格对齐持仓简称才放行。fundInfo[code].name 取自 fundmobapi SHORTNAME，
+           与搜索 securityShortName 同一短名体系，可严格比对。 */
+        if((kind === 'stock' || kind === 'fund') && selfName){
           var sn = String(n.securityShortName || '').trim();
           if(!sn || sn !== selfName) return;
         }
