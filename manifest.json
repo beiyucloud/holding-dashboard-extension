@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "持仓实时盈亏看板",
-  "version": "1.0.5",
+  "version": "1.0.6",
   "description": "本地持仓盈亏/基金估值/股票·场内基金(ETF·LOF·可转债·REITs)实时行情/价格异动提醒看板（个人自用，数据存本地）",
   "homepage_url": "https://beiyucloud.taoxinyuan.com",
   "action": {
@@ -39,6 +39,6 @@
     ]
   },
   "content_security_policy": {
-    "extension_pages": "script-src 'self'; connect-src 'self' https://fund.eastmoney.com https://fundmobapi.eastmoney.com https://push2.eastmoney.com https://push2his.eastmoney.com https://api.fund.eastmoney.com https://search-api-web.eastmoney.com https://quotes.sina.cn https://stock.finance.sina.com.cn https://vip.stock.finance.sina.com.cn https://qt.gtimg.cn; img-src 'self' data: https:; style-src 'self' 'unsafe-inline'; object-src 'self';"
+    "extension_pages": "script-src 'self'; connect-src 'self' https://fund.eastmoney.com https://fundmobapi.eastmoney.com https://push2.eastmoney.com https://push2his.eastmoney.com https://api.fund.eastmoney.com https://search-api-web.eastmoney.com https://np-cnotice-stock.eastmoney.com https://quotes.sina.cn https://stock.finance.sina.com.cn https://vip.stock.finance.sina.com.cn https://qt.gtimg.cn; img-src 'self' data: https:; style-src 'self' 'unsafe-inline'; object-src 'self';"
   }
 }

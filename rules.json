@@ -16,5 +16,22 @@
       "urlFilter": "api.fund.eastmoney.com",
       "resourceTypes": ["xmlhttprequest", "other"]
     }
+  },
+  {
+    "id": 2,
+    "priority": 1,
+    "action": {
+      "type": "modifyHeaders",
+      "requestHeaders": [
+        {
+          "header": "user-agent",
+          "operation": "set",
+          "value": "Mozilla/5.0 (Linux; Android 12; Pixel 6 Build/SP1A.210812.016) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36"
+        }
+      ]
+    },
+    "condition": {
+      "urlFilter": "fundmobapi.eastmoney.com"
+    }
   }
 ]

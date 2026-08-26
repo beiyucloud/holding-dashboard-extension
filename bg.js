@@ -69,23 +69,38 @@ chrome.runtime.onMessage.addListener(function(msg, sender, sendResponse){
     var host = u.hostname;
     if(/push2.*\.eastmoney\.com/.test(host)) return 'https://quote.eastmoney.com/';
     if(/stock\.finance\.sina/.test(host)) return 'https://finance.sina.com.cn/';
+    /* 公告详情接口（np-cnotice / np-anotice）：公告详情页本身在 data.eastmoney.com，按该域名给 referer */
+    if(/np-(cnotice|anotice)/.test(host)) return 'https://data.eastmoney.com/';
     return 'https://fund.eastmoney.com/';
   }
 
+  /* User-Agent 同样按域名区分：fundmobapi 是移动端接口，桌面浏览器 UA 会被静默返回
+     空 Datas（实测：桌面 UA→Datas:null，Android 移动 UA→正常）。其余接口（push2 系行情、
+     新浪）保持桌面 UA 以规避风控。 */
+  var DESKTOP_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36';
+  var MOBILE_UA = 'Mozilla/5.0 (Linux; Android 12; Pixel 6 Build/SP1A.210812.016) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36';
+  function hostUserAgent(url){
+    var host = '';
+    try{ host = new URL(url).hostname; }catch(_){}
+    if(/fundmobapi\.eastmoney\.com/.test(host)) return MOBILE_UA;
+    return DESKTOP_UA;
+  }
+
   async function doFetch(url, referer){
+    const ua = hostUserAgent(url);
     const r = await fetch(url, {
       method: 'GET',
       credentials: 'omit',
       referrer: referer,
       referrerPolicy: 'unsafe-url',
       headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+        'User-Agent': ua,
         'Accept': '*/*',
         'Accept-Language': 'zh-CN,zh;q=0.9'
       }
     });
     const txt = await r.text();
-    return { status: r.status, body: txt };
+    return { status: r.status, body: txt, ua: ua };
   }
 
   (async function(){
@@ -99,7 +114,7 @@ chrome.runtime.onMessage.addListener(function(msg, sender, sendResponse){
       try{
         var res = await doFetch(msg.url, referer);
         if(res.status >= 200 && res.status < 400){
-          sendResponse({ok: true, status: res.status, body: res.body, retries: i});
+          sendResponse({ok: true, status: res.status, body: res.body, retries: i, ua: res.ua});
           return;
         }
         lastErr = 'http ' + res.status;
