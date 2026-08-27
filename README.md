@@ -58,6 +58,6 @@
 
 ## 更新日志
 
-- **v1.0.7（2026-08-26）**：基金公告提醒精准打开修复——基金分支借用股票全文搜索接口会混入无关股票噪声（如 110022 串到"欣禧股份"半年报），点开详情对不上号；把 `securityShortName` 严格匹配过滤扩展到基金分支，噪声被拒、真基金公告通过，详情接口对基金 artCode 直接返回正文。公告弹窗「打开原文」按钮改用 API 返回的 `attach_url` PDF 原件链接（之前写的 HTML 详情页路径被东财 302 跳到列表页，形同没打开）。manifest 升 1.0.7（待发布）。另含代码质量优化：图表 resize 监听器内存泄漏修复（模块级 chartInstance 复用）、移除重复的 ECharts 引入、隐私页 CSS 变量对齐（--line→--border）、持仓刷新改为每批 4 只并发（processHolding + runHoldings）；移除每只基金的无条件 `[ext] dump` 调试日志（发布噪声，其余 warn/error/条件日志保留排障）。
+- **v1.0.7（2026-08-26）**：基金公告提醒精准打开修复——基金分支借用股票全文搜索接口会混入无关股票噪声（如 110022 串到"欣禧股份"半年报），点开详情对不上号；把 `securityShortName` 严格匹配过滤扩展到基金分支，噪声被拒、真基金公告通过，详情接口对基金 artCode 直接返回正文。公告弹窗「打开原文」按钮改用 API 返回的 `attach_url` PDF 原件链接（之前写的 HTML 详情页路径被东财 302 跳到列表页，形同没打开）。manifest 升 1.0.7（待发布）。另含代码质量优化：图表 resize 监听器内存泄漏修复（模块级 chartInstance 复用）、移除重复的 ECharts 引入、隐私页 CSS 变量对齐（--line→--border）、持仓刷新改为每批 4 只并发（processHolding + runHoldings）；移除每只基金的无条件 `[ext] dump` 调试日志（发布噪声，其余 warn/error/条件日志保留排障）。**修复 v55 漏改的 `chart.setOption` → `chartInstance.setOption(opt, true)`（未定义变量 ReferenceError 导致图表完全无数据）**。
 - **v1.0.6（2026-08-26）**：「我的股票」表列序重排（市值→现价后、涨跌幅→成本价后）；批量编辑保存丢失「类型」字段修复（存量「其他」恢复）；公告类提醒可点开查看详情（扩展内弹窗拉东财正文 + 打开原文兜底）；修复 v49 弹窗误调未定义函数导致点不了；浅色主题识别卡片字体对比提升；隐私政策页跟随浅/深主题（外部 privacy.js 兼容 MV3 CSP）；manifest 升 1.0.6。
 - 完整历史见 [CHANGELOG.md](./CHANGELOG.md)。

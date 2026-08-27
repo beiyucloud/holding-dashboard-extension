@@ -601,7 +601,7 @@ function renderChart(hsDates, hsCum, pfCum, todayPf, todayHs, wItems, yView){
   var todayIdx = labels.length - 1;
   var TC = themeColors();
   var todayLabelColor = todayPf !== null ? TC.red : TC.muted;
-  chart.setOption({
+  chartInstance.setOption({
     grid:{left:44, right:14, top:12, bottom:22},
     tooltip:{trigger:'axis', backgroundColor:TC.chartBg, borderColor:TC.chartBorder, textStyle:{color:TC.text, fontSize:12}, valueFormatter:function(v){ return v === null || v === undefined ? '--' : v + '%'; }},
     xAxis:{type:'category', data:labels, axisLine:{lineStyle:{color:TC.chartAxis}}, axisTick:{show:false},
@@ -616,7 +616,7 @@ function renderChart(hsDates, hsCum, pfCum, todayPf, todayHs, wItems, yView){
       {name:'沪深300', type:'line', data:hsData, smooth:true, symbol:'none',
        lineStyle:{color:TC.green, width:1.5, type:'dashed'}, itemStyle:{color:TC.green}}
     ]
-  });
+  }, true);
 
   var pfLast = pfData.length ? pfData[pfData.length-1] : null;
   var hsLast = hsData.length ? hsData[hsData.length-1] : null;
