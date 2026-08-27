@@ -10,6 +10,7 @@
 - **移除重复的 ECharts 引入**：`dashboard.html` 末尾曾再次 `<script src="./echarts.min.js">`，与 `<head>` 内重复。删去末尾那次，仅保留 head 引入。
 - **隐私页 CSS 变量对齐**：`privacy.html` 的边框色变量由 `--line` 统一改为 `--border`，与 `dashboard.html` 命名一致（纯主题命名统一，无功能影响）。
 - **持仓刷新并行化**：`refreshAll()` 内对持仓的 `for` 循环逐只 `await`（新浪估值 / 持仓 / ulist / 趋势 / lsjz 串行），整体耗时≈各基金耗时之和。改为把单只处理提取为 `processHolding()`，以每批 4 只的并发上限执行（`runHoldings(holdings, 4)`），各基金之间并行、单只内部仍串行，接口瞬时压力可控（限流友好）。
+- **移除每只基金的 [ext] dump 调试日志**：`processHolding` 末尾原先对每只基金无条件 `console.log('[ext] dump ...')`，发布后每次刷新都会在控制台刷一排噪声。删除该行；其余 warn/error/条件日志（trend/lsjz/新浪/NAV 覆盖等）保留作排障用。
 
 > 发布状态：本地 `ext/` 已就绪（commit 待打 v1.0.7 tag），**待推送**——GitHub / 官网 / Edge 商店三处发布在收到「推送」指令后执行。
 

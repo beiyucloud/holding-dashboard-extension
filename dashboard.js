@@ -958,7 +958,6 @@ async function refreshAll(){
       info1.estType = 'yNav';
     }
     if(!info1.name) info1.name = h.code;
-    console.log('[ext] dump ' + h.code, 'name=' + info1.name, 'gsz=' + info1.gsz, 'dwjz=' + info1.dwjz, 'gszzl=' + info1.gszzl, 'noGZ=' + info1.noGZ, 'estType=' + info1.estType);
   }
 
   /* 并发执行所有持仓刷新（每批最多 4 只并行），全部完成后再继续后续汇总与渲染 */
