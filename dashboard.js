@@ -582,6 +582,7 @@ function renderHoldings(){
 }
 
 /* ================= 渲染：7日图表 ================= */
+var chartInstance = null; /* 模块级复用，避免每次 refreshAll 重新 init 同一 DOM 并反复 addEventListener('resize') 造成内存泄漏 */
 function renderChart(hsDates, hsCum, pfCum, todayPf, todayHs, wItems, yView){
   if(!window.echarts){ $('#chart').innerHTML = '<div class="err" style="padding-top:40px">图表组件加载失败（需联网加载 ECharts）</div>'; return; }
   var labels = hsDates.slice();
@@ -592,7 +593,10 @@ function renderChart(hsDates, hsCum, pfCum, todayPf, todayHs, wItems, yView){
     pfData.push(+(((1 + (pfCum.length ? pfCum[pfCum.length-1] : 0)/100) * (1 + todayPf/100) - 1) * 100).toFixed(2));
     hsData.push(+(((1 + (hsCum.length ? hsCum[hsCum.length-1] : 0)/100) * (1 + todayHs/100) - 1) * 100).toFixed(2));
   }
-  var chart = echarts.init($('#chart'), null, {renderer:'canvas'});
+  if(!chartInstance){
+    chartInstance = echarts.init($('#chart'), null, {renderer:'canvas'});
+    window.addEventListener('resize', function(){ if(chartInstance) chartInstance.resize(); });
+  }
   /* 标记「今日」刻度位置，用于把 X 轴标签和曲线最后一点加粗变红 */
   var todayIdx = labels.length - 1;
   var TC = themeColors();
@@ -613,7 +617,6 @@ function renderChart(hsDates, hsCum, pfCum, todayPf, todayHs, wItems, yView){
        lineStyle:{color:TC.green, width:1.5, type:'dashed'}, itemStyle:{color:TC.green}}
     ]
   });
-  window.addEventListener('resize', function(){ chart.resize(); });
 
   var pfLast = pfData.length ? pfData[pfData.length-1] : null;
   var hsLast = hsData.length ? hsData[hsData.length-1] : null;
@@ -746,8 +749,9 @@ async function refreshAll(){
   }catch(e){ console.warn('[ext] fundmobapi 全失败:', e && e.message || e); markSrc('mob', false); }
   var sinaTried = false, sinaOk = false, holdTried = false, holdOk = false, trendOk = false;
 
-  for(var i = 0; i < holdings.length; i++){
-    var h = holdings[i];
+  /* 持仓并行刷新：每只基金独立处理、限制并发 4 路避免东财/新浪接口瞬时打满；
+     每只内部仍串行（新浪→持仓→ulist→趋势→lsjz），但各基金之间并行，整体耗时≈单只而非累加 */
+  async function processHolding(h){
     var v = mob[h.code] || null;
     var info1 = {
       name: h.name || (v ? v.SHORTNAME : null),
@@ -956,6 +960,15 @@ async function refreshAll(){
     if(!info1.name) info1.name = h.code;
     console.log('[ext] dump ' + h.code, 'name=' + info1.name, 'gsz=' + info1.gsz, 'dwjz=' + info1.dwjz, 'gszzl=' + info1.gszzl, 'noGZ=' + info1.noGZ, 'estType=' + info1.estType);
   }
+
+  /* 并发执行所有持仓刷新（每批最多 4 只并行），全部完成后再继续后续汇总与渲染 */
+  async function runHoldings(items, limit){
+    for(var bi = 0; bi < items.length; bi += limit){
+      var batch = items.slice(bi, bi + limit);
+      await Promise.all(batch.map(function(x){ return processHolding(x); }));
+    }
+  }
+  await runHoldings(holdings, 4);
   if(sinaTried) markSrc('sina', sinaOk);
   if(holdTried) markSrc('holding', holdOk);
   markSrc('trend', trendOk);
