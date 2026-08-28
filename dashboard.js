@@ -2358,6 +2358,9 @@ var noticeSummarizer = (function(){
       .replace(/&gt;/g, '>')
       .replace(/&quot;/g, '"')
       .replace(/&#39;/g, "'")
+      .replace(/&minus;/g, '-')   // 表格里负号常写为 &minus;
+      .replace(/&mdash;/g, '-')
+      .replace(/&middot;/g, '·')
       .replace(/\s+/g, ' ')
       .trim();
   }
@@ -2388,7 +2391,11 @@ var noticeSummarizer = (function(){
       {tag:'风险提示', re:/风险提示|退市风险|交易风险/i, weight:1.0},
       {tag:'高管变动', re:/高管变动|董事长.*辞任|总经理.*辞任|聘任.*总经理|聘任.*董事长/i, weight:1.0},
       {tag:'解禁', re:/限售股解禁|解除限售|首发限售股/i, weight:1.0},
-      {tag:'现金管理', re:/使用闲置自有资金|使用闲置募集资金|现金管理/i, weight:0.9}
+      {tag:'现金管理', re:/使用闲置自有资金|使用闲置募集资金|现金管理/i, weight:0.9},
+      {tag:'定期报告', re:/年度报告|半年度报告|季度报告|中期报告|经营数据公告/i, weight:1.0},
+      {tag:'股东会通知', re:/关于召开.{0,12}(?:临时|年度)?(?:股东大会|股东会)的通知/i, weight:1.0},
+      {tag:'经营范围变更', re:/关于增加经营范围|关于变更经营范围|经营范围.{0,4}变更/i, weight:1.0},
+      {tag:'公司章程', re:/公司章程\s*[\(（].{0,40}(?:修订|草案)/i, weight:1.0}
     ];
     var best = null, bestScore = 0;
     for(var i=0;i<rules.length;i++){
@@ -2527,6 +2534,69 @@ var noticeSummarizer = (function(){
     else if(tag === '现金管理'){
       var m = clean.match(/额度.{0,8}?(不超过|不高于)?\s*([\d,\.]+\s*[万亿]?元)/);
       if(m) items.push('额度 ' + (m[1]||'') + m[2].replace(/\s+/g,''));
+    }
+    else if(tag === '定期报告'){
+      // 半年报 / 半年报摘要 / 季度报告 / 年度报告 / 中期报告 —— 表格列序：本报告期 / 上年同期 / 同比数字（部分带%部分不带）
+      function grabFin(label){
+        var m = clean.match(new RegExp(label + '\\s+([\\-\\d,\\.]+)\\s+[\\-\\d,\\.]+\\s+([\\-\\d.]+)'));
+        if(m) return label + ' ' + m[1].replace(/,/g,'') + '元（同比' + m[2] + '%）';
+        return null;
+      }
+      ['营业收入','利润总额','归属于上市公司股东的净利润','经营活动产生的现金流量净额','归属于上市公司股东的扣除非经常性损益的净利润']
+        .forEach(function(lab){ var it = grabFin(lab); if(it) items.push(it); });
+      // 半年报摘要还会多列资产/净资产（区间数据：本报告期末 / 上年度末 / 增减%）
+      if(items.length < 3){
+        var ma = clean.match(/总资产\s+([\-\d,\.]+)\s+[\-\d,\.]+\s+([\-\d.]+)/);
+        if(ma) items.push('总资产 ' + ma[1].replace(/,/g,'') + '元（较上年末' + ma[2] + '%）');
+        var mn = clean.match(/归属于上市公司股东的净资产\s+([\-\d,\.]+)\s+[\-\d,\.]+\s+([\-\d.]+)/);
+        if(mn) items.push('归母净资产 ' + mn[1].replace(/,/g,'') + '元（较上年末' + mn[2] + '%）');
+      }
+      // 经营数据公告（无逐项 KPI）：抓"合计"行的主营业务合计（第 1 + 第 4 列）
+      if(items.length === 0){
+        var mt = clean.match(/合\s*计\s+([\-\d,\.]+)\s+[\-\d,\.]+\s+[\-\d,\.]+\s+([\-\d.]+)/);
+        if(mt) items.push('主营合计 ' + mt[1].replace(/,/g,'') + '元（同比' + mt[2] + '%）');
+      }
+    }
+    else if(tag === '股东会通知'){
+      function pad(s){ s = String(s); return s.length === 1 ? '0' + s : s; }
+      // 召开日期
+      var m1 = clean.match(/股东会召开日期[：:]\s*(\d{4})\s*年\s*(\d{1,2})\s*月\s*(\d{1,2})\s*日/);
+      if(m1) items.push('召开日期 ' + m1[1] + '-' + pad(m1[2]) + '-' + pad(m1[3]));
+      // 召开时间（具体到时分）
+      var m2 = clean.match(/召开.{0,4}日期时间[：:]\s*(\d{4})\s*年\s*(\d{1,2})\s*月\s*(\d{1,2})\s*日\s*(\d{1,2})\s*点(?:(\d{1,2})\s*分)?/);
+      if(m2) items.push('召开时间 ' + m2[1] + '-' + pad(m2[2]) + '-' + pad(m2[3]) + ' ' + pad(m2[4]) + ':' + pad(m2[5] || '00'));
+      // 股权登记日（表格里中间夹"Ａ股 603123 翠微股份"等列名，30 字符内找日期）
+      var m3 = clean.match(/股权登记日[\s\S]{0,30}?(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})/);
+      if(m3) items.push('股权登记日 ' + m3[1] + '-' + pad(m3[2]) + '-' + pad(m3[3]));
+      // 召开地点
+      var m4 = clean.match(/召开地点[：:]\s*([^\n。\()]{4,30})/);
+      if(m4) items.push('地点：' + m4[1].trim());
+    }
+    else if(tag === '经营范围变更'){
+      var lines = clean.match(/第\s*(\d{1,3})\s*条/g);
+      if(lines){
+        var uniq = [];
+        lines.forEach(function(s){
+          var n = parseInt(s.replace(/[^\d]/g, ''), 10);
+          if(n > 0 && uniq.indexOf(n) === -1) uniq.push(n);
+        });
+        if(uniq.length >= 1){
+          var sample = uniq.slice(0, 4).map(function(n){ return '第' + n + '条'; }).join('、');
+          if(uniq.length > 4) sample += ' 等共 ' + uniq.length + ' 条';
+          items.push('修订条款：' + sample);
+        }
+      }
+      if(/尚需提交(?:公司)?(?:股东会|股东大会)审议/.test(clean)) items.push('尚需股东会审议');
+      if(/经营范围/.test(clean)) items.push('涉及：经营范围');
+      if(/对外担保/.test(clean)) items.push('涉及：对外担保');
+    }
+    else if(tag === '公司章程'){
+      var chapMatches = clean.match(/第\s*[一二三四五六七八九十\d]+\s*章/g);
+      if(chapMatches && chapMatches.length >= 5){
+        var uniq = [];
+        chapMatches.forEach(function(s){ if(uniq.indexOf(s) === -1) uniq.push(s); });
+        items.push('全文共 ' + uniq.length + ' 章');
+      }
     }
     else if(tag === '关联交易'){
       var m = clean.match(/交易金额.{0,8}?([\d,\.]+\s*[万亿]?元)/);
