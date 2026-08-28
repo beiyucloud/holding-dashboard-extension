@@ -2349,7 +2349,9 @@ var noticeSummarizer = (function(){
   function stripHtml(html){
     if(!html) return '';
     return String(html)
-      .replace(/<[^>]+>/g, ' ')
+      // 只去真正 HTML 标签（字母开头的标签 / 闭合标签 / 注释 / 处理指令），
+      // 不去裸的 <xxx> —— 东财正文里把 <公司章程> 这种当章节标题用的不是标签（v59 翠微股份踩过这坑）
+      .replace(/<(?:\/?[a-zA-Z][^>]*?|!--[\s\S]*?--|\?[^]*?\?)>/g, ' ')
       .replace(/&nbsp;/g, ' ')
       .replace(/&amp;/g, '&')
       .replace(/&lt;/g, '<')
@@ -2361,6 +2363,14 @@ var noticeSummarizer = (function(){
   }
   function detectTag(title, text){
     var t = (title || '') + '\n' + (text || '').substring(0, 800);
+    /* 强信号：标题里直接出现"X届董事会决议公告"/"X届股东会决议公告" → 直接锁定决议类，
+       防止正文里"聘任总经理"等把决议类型挤掉（v59 翠微股份实测踩过这坑）。 */
+    if(/董事会.{0,6}决议公告|决议的公告|第[一二三四五六七八九十\d]+届董事会/.test(title || '')){
+      return '董事会决议';
+    }
+    if(/股东会.{0,6}决议公告|第[一二三四五六七八九十\d]+届股东会|股东大会决议公告/.test(title || '')){
+      return '股东会决议';
+    }
     var rules = [
       {tag:'分红派息', re:/利润分配|分红|派息|派现|送股|转增|权益分派|股利/i, weight:1.0},
       {tag:'股份回购', re:/回购股份|股份回购|回购方案|集中竞价|要约收购/i, weight:1.0},
@@ -2368,8 +2378,8 @@ var noticeSummarizer = (function(){
       {tag:'股东增持', re:/增持股份|股东增持|增持计划|增持公司股份/i, weight:1.0},
       {tag:'业绩预告', re:/业绩预告|预计.*净利润|半年度业绩|年度业绩|业绩预增|业绩预减|业绩预亏|扭亏/i, weight:1.0},
       {tag:'重大合同', re:/重大合同|签订.*合同|中标|签署.*协议|采购合同|销售合同/i, weight:1.0},
-      {tag:'股东会决议', re:/股东大会决议|股东会决议|年度股东大会|临时股东大会|审议通过/i, weight:0.8},
-      {tag:'董事会决议', re:/董事会决议|审议通过.*议案|第二届董事会/i, weight:0.7},
+      {tag:'股东会决议', re:/股东大会决议|股东会决议|年度股东大会|临时股东大会|审议通过/i, weight:1.0},
+      {tag:'董事会决议', re:/董事会决议|审议通过.*议案|第[一二三四五六七八九十\d]+届董事会/i, weight:1.0},
       {tag:'股权激励', re:/股权激励|限制性股票|股票期权|员工持股计划/i, weight:1.0},
       {tag:'重大资产', re:/重大资产|资产重组|并购|收购.*股权|发行股份购买/i, weight:1.0},
       {tag:'关联交易', re:/关联交易/i, weight:0.9},
@@ -2449,19 +2459,31 @@ var noticeSummarizer = (function(){
       if(m3) items.push('对手方：' + m3[1].substring(0, 20));
     }
     else if(tag === '股东会决议' || tag === '董事会决议'){
-      var bookMatches = clean.match(/《([^》\n]{2,40})》/g);
-      if(bookMatches){
-        bookMatches.slice(0, 4).forEach(function(s){
-          var t = s.replace(/[《》]/g, '').trim();
+      // 优先：抓"审议通过"紧跟的《议案名》——精准命中议案（避开正文里"符合《公司法》和《公司章程》的有关规定"这种法律引用）
+      var agendaMatches = clean.match(/审议通过[了]?《([^》\n]{2,40})》/g);
+      if(agendaMatches){
+        agendaMatches.slice(0, 6).forEach(function(s){
+          var t = s.replace(/^审议通过[了]?《/, '').replace(/》$/, '').trim();
           if(t && !/^\d+$/.test(t)) items.push(t);
         });
       }
+      // 兜底1：审议通过短句（议案没《》包裹）
       if(items.length === 0){
         var matches = clean.match(/审议通过[「」《》]?([^。\n]{4,30}?)[。\n]/g);
         if(matches){
-          matches.slice(0, 3).forEach(function(s){
+          matches.slice(0, 4).forEach(function(s){
             var t = s.replace(/审议通过[「」《》]?/, '').replace(/[。\n]$/, '').trim();
             if(t) items.push(t);
+          });
+        }
+      }
+      // 兜底2：所有《》作为弱信号
+      if(items.length === 0){
+        var bookMatches = clean.match(/《([^》\n]{2,40})》/g);
+        if(bookMatches){
+          bookMatches.slice(0, 4).forEach(function(s){
+            var t = s.replace(/[《》]/g, '').trim();
+            if(t && !/^\d+$/.test(t)) items.push(t);
           });
         }
       }
@@ -2522,7 +2544,9 @@ var noticeSummarizer = (function(){
     if(!tag) return null;
     var items = extractItems(tag, text);
     if(!items || items.length === 0) return null;
-    return { tag: tag, items: items.slice(0, 4) };
+    /* 限长：决议类公告天然是"列议案"，放宽到 6 条；其他类型保持 4 条简洁 */
+    var maxItems = (tag === '董事会决议' || tag === '股东会决议') ? 6 : 4;
+    return { tag: tag, items: items.slice(0, maxItems) };
   }
   return { summarize: summarize, stripHtml: stripHtml, detectTag: detectTag };
 })();
