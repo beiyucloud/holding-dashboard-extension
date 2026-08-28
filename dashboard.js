@@ -2227,16 +2227,20 @@ async function openNotice(artCode, title, nm, pureCode, date){
   fetchNoticeBody(artCode).then(function(res){
     var html = res && res.html;
     var attachUrl = res && res.attachUrl;
-    if(!html){ renderNoticeError('公告正文为空'); updateOrigBtn(orig, attachUrl); return; }
+    if(!html){ renderNoticeError('公告正文为空'); updateOrigBtn(orig, attachUrl); renderNoticeSummary(null); return; }
     /* 东财正文常带完整 <html>...</html>，内含 <head> 与样式资源。简单做法：整段塞进我们的弹层会被弹层样式覆盖掉，
        因此只提取 <body> 内部（如果存在），否则整段。保留 img / table / p / h2 等基础元素样式在 .notice-body 已有覆盖。 */
     var bodyHtml = extractBodyHtml(html);
     $('#noticeBody').innerHTML = bodyHtml;
+    /* 速读卡片：从原始 html（stripHtml 内部已完成）提炼类型+关键数字/事件；
+       失败返回 null → renderNoticeSummary 隐藏卡片（弹窗行为完全不变）。 */
+    renderNoticeSummary(noticeSummarizer.summarize(title, html));
     updateOrigBtn(orig, attachUrl);
     if(attachUrl){ noticeCtx.attachUrl = attachUrl; orig.setAttribute('data-artcode', artCode); orig.setAttribute('data-attach', attachUrl); }
   }).catch(function(err){
     renderNoticeError('加载失败：' + (err && err.message || err));
     updateOrigBtn(orig, '');
+    renderNoticeSummary(null);
   });
 }
 
@@ -2284,13 +2288,15 @@ function retryNotice(){
   orig.textContent = '正在加载 PDF 链接…';
   fetchNoticeBody(ac).then(function(res){
     var html = res && res.html, attachUrl = res && res.attachUrl;
-    if(!html){ renderNoticeError('公告正文为空'); updateOrigBtn(orig, attachUrl); return; }
+    if(!html){ renderNoticeError('公告正文为空'); updateOrigBtn(orig, attachUrl); renderNoticeSummary(null); return; }
     $('#noticeBody').innerHTML = extractBodyHtml(html);
+    renderNoticeSummary(noticeSummarizer.summarize(noticeCtx.title, html));
     updateOrigBtn(orig, attachUrl);
     if(attachUrl){ noticeCtx.attachUrl = attachUrl; orig.setAttribute('data-artcode', ac); orig.setAttribute('data-attach', attachUrl); }
   }).catch(function(err){
     renderNoticeError('加载失败：' + (err && err.message || err));
     updateOrigBtn(orig, '');
+    renderNoticeSummary(null);
   });
 }
 
@@ -2334,6 +2340,209 @@ function extractBodyHtml(html){
   var m = html.match(/<body[^>]*>([\s\S]*?)<\/body>/i);
   return m ? m[1] : html;
 }
+
+/* 公告速读提炼器：从标题+正文里规则化提取「类型标签 + 关键数字/事件」，
+   用于在公告弹窗正文上方插入"速读卡片"，让用户在 800 字法律套话里一眼看到核心要点。
+   失败兜底：返回 null，调用方不渲染速读卡片（弹窗行为完全不变）。
+   纯本地实现，零网络依赖；规则随真实公告迭代，详见 agent-tmp/notice_summarizer.js 同源测试。 */
+var noticeSummarizer = (function(){
+  function stripHtml(html){
+    if(!html) return '';
+    return String(html)
+      .replace(/<[^>]+>/g, ' ')
+      .replace(/&nbsp;/g, ' ')
+      .replace(/&amp;/g, '&')
+      .replace(/&lt;/g, '<')
+      .replace(/&gt;/g, '>')
+      .replace(/&quot;/g, '"')
+      .replace(/&#39;/g, "'")
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+  function detectTag(title, text){
+    var t = (title || '') + '\n' + (text || '').substring(0, 800);
+    var rules = [
+      {tag:'分红派息', re:/利润分配|分红|派息|派现|送股|转增|权益分派|股利/i, weight:1.0},
+      {tag:'股份回购', re:/回购股份|股份回购|回购方案|集中竞价|要约收购/i, weight:1.0},
+      {tag:'股东减持', re:/减持股份|股东减持|减持计划|集中竞价减持|大宗交易减持/i, weight:1.0},
+      {tag:'股东增持', re:/增持股份|股东增持|增持计划|增持公司股份/i, weight:1.0},
+      {tag:'业绩预告', re:/业绩预告|预计.*净利润|半年度业绩|年度业绩|业绩预增|业绩预减|业绩预亏|扭亏/i, weight:1.0},
+      {tag:'重大合同', re:/重大合同|签订.*合同|中标|签署.*协议|采购合同|销售合同/i, weight:1.0},
+      {tag:'股东会决议', re:/股东大会决议|股东会决议|年度股东大会|临时股东大会|审议通过/i, weight:0.8},
+      {tag:'董事会决议', re:/董事会决议|审议通过.*议案|第二届董事会/i, weight:0.7},
+      {tag:'股权激励', re:/股权激励|限制性股票|股票期权|员工持股计划/i, weight:1.0},
+      {tag:'重大资产', re:/重大资产|资产重组|并购|收购.*股权|发行股份购买/i, weight:1.0},
+      {tag:'关联交易', re:/关联交易/i, weight:0.9},
+      {tag:'停牌', re:/停牌|停牌一天|停牌申请|临时停牌/i, weight:1.0},
+      {tag:'复牌', re:/复牌|复牌公告|将于.*复牌/i, weight:1.0},
+      {tag:'风险提示', re:/风险提示|退市风险|交易风险/i, weight:1.0},
+      {tag:'高管变动', re:/高管变动|董事长.*辞任|总经理.*辞任|聘任.*总经理|聘任.*董事长/i, weight:1.0},
+      {tag:'解禁', re:/限售股解禁|解除限售|首发限售股/i, weight:1.0},
+      {tag:'现金管理', re:/使用闲置自有资金|使用闲置募集资金|现金管理/i, weight:0.9}
+    ];
+    var best = null, bestScore = 0;
+    for(var i=0;i<rules.length;i++){
+      var r = rules[i];
+      if(r.re.test(t)){
+        var score = r.weight + (r.re.test(title || '') ? 0.5 : 0);
+        if(score > bestScore){ bestScore = score; best = r.tag; }
+      }
+    }
+    return best;
+  }
+  function extractItems(tag, text){
+    var items = [];
+    if(!text) return items;
+    var clean = text.replace(/^.*?本公司及董事会全体成员保证信息披露.*?遗漏[。\.]\s*/s, '');
+    if(tag === '分红派息'){
+      var m1 = clean.match(/每\s*10\s*股(?:派(?:发)?)?(?:现金)?(?:红利|股息)?\s*([\d.,]+)\s*元/i)
+             || clean.match(/每\s*10\s*股派(?:发)?\s*现金红利\s*([\d.,]+)\s*元/i)
+             || clean.match(/每\s*10\s*股(?:转增|送)\s*(\d+)\s*股/i);
+      if(m1) items.push('每 10 股派 ' + m1[1] + ' 元（含税）');
+      var m2 = clean.match(/(?:合计|共计|总计|总额).{0,12}?([\d,\.]+\s*[万亿]?元)/);
+      if(m2) items.push('合计派现 ' + m2[1].replace(/\s+/g,''));
+      var m3 = clean.match(/(送(?:红)?股|转增(?:股本)?).{0,15}?(\d+(?:\.\d+)?\s*股)/);
+      if(m3) items.push(m3[1] + ' ' + m3[2].replace(/\s+/g,''));
+      if(/不送红股.*?不(?:进行)?(?:转增|以资本公积金转增)/i.test(clean) ||
+         /不进行送股.*?不进行资本公积转增/i.test(clean)){
+        items.push('不送红股、不转增');
+      }
+      var m4 = clean.match(/(?:以|按).{0,8}?(总股本|分红派息股权登记日总股本).{0,12}?([\d,，]+)\s*股/);
+      if(m4) items.push('基数：' + m4[2] + ' 股');
+    }
+    else if(tag === '股份回购'){
+      var m = clean.match(/回购(?:金额|资金|总额).{0,8}?([\d,\.]+\s*[万亿]?元)/);
+      if(m) items.push('回购金额 ' + m[1].replace(/\s+/g,''));
+      var m2 = clean.match(/回购价格.{0,15}?([\d.,]+\s*元\/股)/);
+      if(m2) items.push('回购价格上限 ' + m2[1].replace(/\s+/g,''));
+      var m3 = clean.match(/回购数量.{0,15}?([\d,，]+\s*股)/);
+      if(m3) items.push('回购数量 ' + m3[1].replace(/\s+/g,''));
+      var m4 = clean.match(/回购期限.{0,8}?(\d+\s*个月)/);
+      if(m4) items.push('回购期限 ' + m4[1].replace(/\s+/g,''));
+    }
+    else if(tag === '股东减持' || tag === '股东增持'){
+      var m = clean.match(/(减持|增持).{0,30}?数量.{0,30}?([\d,，]+\s*股)/);
+      if(m) items.push(m[1] + '数量 ' + m[2].replace(/\s+/g,''));
+      var m2 = clean.match(/(减持|增持).{0,30}?比例.{0,30}?([\d.]+\s*%)/);
+      if(m2) items.push(m2[1] + '比例 ' + m2[2].replace(/\s+/g,''));
+      var m3 = clean.match(/(减持|增持).{0,30}?价格(?:区间)?.{0,30}?([\d.,]+\s*元\/股)/);
+      if(m3) items.push(m3[1] + '价格 ' + m3[2].replace(/\s+/g,''));
+      var m4 = clean.match(/(减持|增持).{0,30}?期限.{0,30}?(\d+\s*个月)/);
+      if(m4) items.push(m4[1] + '期限 ' + m4[2].replace(/\s+/g,''));
+    }
+    else if(tag === '业绩预告'){
+      var m = clean.match(/预计[^\n。]{0,30}?净利润[^\n。]{0,15}?(-?[\d,\.]+\s*[万亿]?元)/);
+      if(m) items.push('预计净利润 ' + m[1].replace(/\s+/g,''));
+      var m2 = clean.match(/同比(?:增长|上升|增加)\s*([\d.]+\s*%)/);
+      if(m2) items.push('同比增长 ' + m2[1].replace(/\s+/g,''));
+      var m3 = clean.match(/同比(?:下降|减少|下滑)\s*([\d.]+\s*%)/);
+      if(m3) items.push('同比下降 ' + m3[1].replace(/\s+/g,''));
+      if(/扭亏|实现盈利/.test(clean)) items.push('扭亏为盈');
+      if(/由盈转亏|出现亏损|预计亏损/.test(clean)) items.push('由盈转亏');
+    }
+    else if(tag === '重大合同'){
+      var m = clean.match(/合同(?:总?金额|总价|总额).{0,8}?([\d,\.]+\s*[万亿]?元)/);
+      if(m) items.push('合同金额 ' + m[1].replace(/\s+/g,''));
+      var m2 = clean.match(/签订.{0,4}?《([^》]+)》/);
+      if(m2) items.push('合同：' + m2[1].substring(0, 30));
+      var m3 = clean.match(/对方|交易对手|客户.{0,4}?(\S{2,15}?(?:公司|集团|局|厂|院|中心))/);
+      if(m3) items.push('对手方：' + m3[1].substring(0, 20));
+    }
+    else if(tag === '股东会决议' || tag === '董事会决议'){
+      var bookMatches = clean.match(/《([^》\n]{2,40})》/g);
+      if(bookMatches){
+        bookMatches.slice(0, 4).forEach(function(s){
+          var t = s.replace(/[《》]/g, '').trim();
+          if(t && !/^\d+$/.test(t)) items.push(t);
+        });
+      }
+      if(items.length === 0){
+        var matches = clean.match(/审议通过[「」《》]?([^。\n]{4,30}?)[。\n]/g);
+        if(matches){
+          matches.slice(0, 3).forEach(function(s){
+            var t = s.replace(/审议通过[「」《》]?/, '').replace(/[。\n]$/, '').trim();
+            if(t) items.push(t);
+          });
+        }
+      }
+    }
+    else if(tag === '股权激励'){
+      var m = clean.match(/授予.{0,8}?(\d[\d,，]*\s*股)/);
+      if(m) items.push('授予股份 ' + m[1].replace(/\s+/g,''));
+      var m2 = clean.match(/授予价格.{0,8}?([\d.,]+\s*元\/股)/);
+      if(m2) items.push('授予价格 ' + m2[1].replace(/\s+/g,''));
+      var m3 = clean.match(/激励对象.{0,8}?(\d+\s*人)/);
+      if(m3) items.push('激励对象 ' + m3[1].replace(/\s+/g,''));
+    }
+    else if(tag === '重大资产'){
+      var m = clean.match(/交易(?:价格|金额|作价).{0,8}?([\d,\.]+\s*[万亿]?元)/);
+      if(m) items.push('交易作价 ' + m[1].replace(/\s+/g,''));
+      var m2 = clean.match(/(标的|标的公司).{0,4}?(\S{2,15}?(?:公司|有限))/);
+      if(m2) items.push('标的：' + m2[2].substring(0, 18));
+    }
+    else if(tag === '停牌' || tag === '复牌'){
+      var m = clean.match(/(\d{4}\s*年\s*\d{1,2}\s*月\s*\d{1,2}\s*日).{0,4}?(开市起|停牌|复牌)/);
+      if(m) items.push(m[1] + ' ' + (tag === '停牌' ? '开市起停牌' : '开市起复牌'));
+    }
+    else if(tag === '风险提示'){
+      if(/退市风险|被终止上市|可能.{0,4}终止上市/.test(clean)) items.push('存在退市风险');
+      if(/二级市场.{0,4}交易风险|股价.{0,4}交易风险/.test(clean)) items.push('二级市场交易风险');
+      if(/股价异常波动|股价大幅波动|股价.{0,4}异常/.test(clean)) items.push('股价异常波动');
+      if(/估值风险|高估风险|市场情绪/.test(clean)) items.push('估值/市场情绪风险');
+    }
+    else if(tag === '高管变动'){
+      var m = clean.match(/(聘任|选举|任命)([^。\s]{2,8}?)为[^\n。]{0,15}?(总经理|董事长|副总经理|财务总监|董事会秘书)/);
+      if(m) items.push(m[1] + m[2] + '为' + m[3]);
+      var m2 = clean.match(/([^。\s]{2,8}?)因[^\n。]{0,12}?辞去[^\n。]{0,8}?(总经理|董事长|副总经理|财务总监|董事会秘书)/);
+      if(m2) items.push(m2[1] + '辞去' + m2[2] + '职务');
+    }
+    else if(tag === '解禁'){
+      var m = clean.match(/解除限售.{0,8}?(\d[\d,，]*\s*股)/);
+      if(m) items.push('解禁数量 ' + m[1].replace(/\s+/g,''));
+      var m2 = clean.match(/占总股本.{0,8}?([\d.]+\s*%)/);
+      if(m2) items.push('占总股本 ' + m2[1].replace(/\s+/g,''));
+    }
+    else if(tag === '现金管理'){
+      var m = clean.match(/额度.{0,8}?(不超过|不高于)?\s*([\d,\.]+\s*[万亿]?元)/);
+      if(m) items.push('额度 ' + (m[1]||'') + m[2].replace(/\s+/g,''));
+    }
+    else if(tag === '关联交易'){
+      var m = clean.match(/交易金额.{0,8}?([\d,\.]+\s*[万亿]?元)/);
+      if(m) items.push('交易金额 ' + m[1].replace(/\s+/g,''));
+    }
+    if(items.length === 0 && tag){
+      items.push('详情请打开 PDF 原文查阅');
+    }
+    return items;
+  }
+  function summarize(title, html){
+    if(!title && !html) return null;
+    var text = stripHtml(html);
+    var tag = detectTag(title, text);
+    if(!tag) return null;
+    var items = extractItems(tag, text);
+    if(!items || items.length === 0) return null;
+    return { tag: tag, items: items.slice(0, 4) };
+  }
+  return { summarize: summarize, stripHtml: stripHtml, detectTag: detectTag };
+})();
+
+/* 渲染速读卡片到弹窗 #noticeSummary；summary=null 时隐藏。 */
+function renderNoticeSummary(summary){
+  var box = $('#noticeSummary');
+  if(!box) return;
+  if(!summary){
+    box.style.display = 'none';
+    box.innerHTML = '';
+    return;
+  }
+  var tag = $('#noticeSummaryTag');
+  var items = $('#noticeSummaryItems');
+  if(tag) tag.textContent = summary.tag;
+  if(items) items.innerHTML = summary.items.map(function(s){ return '<li>' + escHtml(s) + '</li>'; }).join('');
+  box.style.display = '';
+}
+
 /* 渲染基金/股票阈值列表（合并了原顶部"仅停提醒"芯片：每行可直接 × 停提醒 / 停后变"恢复"） */
 function renderAlertRows(){
   var fundMuted = alerts.settings.fundMuted || {};
