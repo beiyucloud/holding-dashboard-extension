@@ -23,7 +23,10 @@
   }
   function onClick(e){
     var el = e.target && e.target.closest && e.target.closest('[data-act],[data-fns]');
-    if(el) fire(el, e);
+    if(!el) return;
+    // checkbox 使用 data-evt="change" 单独触发，避免 click 与 change 双重调用导致状态反转
+    if(el.tagName === 'INPUT' && el.type === 'checkbox' && el.getAttribute('data-evt') === 'change') return;
+    fire(el, e);
   }
   function onEvt(e){
     var el = e.target && e.target.closest && e.target.closest('[data-evt]');
@@ -386,14 +389,56 @@ function calcRow(h, info){
 }
 
 /* ================= 渲染：指数 ================= */
-var IDX = [
-  {code:'sh000001', label:'沪市主板', color:'#4f8cff'},
-  {code:'sh000300', label:'沪深300', color:'#f04545'},
-  {code:'sz399006', label:'创业板指', color:'#e8a13a'},
-  {code:'sh000688', label:'科创50', color:'#a06bd4'},
-  {code:'hkHSTECH', label:'恒生科技', color:'#2dd4bf'},
-  {code:'sh000905', label:'中证500', color:'#f6c453'}
+/* 指数候选池（含 A股 / 港股 / 美股 / 商品），首页卡片最多显示 7 个，用户自选 */
+var IDX_ALL = [
+  {code:'sh000001', label:'沪市主板', group:'A股', color:'#4f8cff'},
+  {code:'sh000300', label:'沪深300', group:'A股', color:'#f04545'},
+  {code:'sz399006', label:'创业板指', group:'A股', color:'#e8a13a'},
+  {code:'sh000688', label:'科创50', group:'A股', color:'#a06bd4'},
+  {code:'sh000905', label:'中证500', group:'A股', color:'#f6c453'},
+  {code:'sz399001', label:'深证成指', group:'A股', color:'#2dd4bf'},
+  {code:'sh000016', label:'上证50', group:'A股', color:'#4f8cff'},
+  {code:'bj899050', label:'北证50', group:'A股', color:'#e85a78'},
+  {code:'sh000852', label:'中证1000', group:'A股', color:'#a06bd4'},
+  {code:'hkHSI', label:'恒生指数', group:'港股', color:'#2dd4bf'},
+  {code:'hkHSTECH', label:'恒生科技', group:'港股', color:'#2dd4bf'},
+  {code:'hkHSCEI', label:'国企指数', group:'港股', color:'#2dd4bf'},
+  {code:'usINX', label:'标普500', group:'美股', color:'#e8c15a'},
+  {code:'usDJI', label:'道琼斯', group:'美股', color:'#e8c15a'},
+  {code:'usIXIC', label:'纳斯达克', group:'美股', color:'#e8c15a'},
+  {code:'usNDX', label:'纳指100', group:'美股', color:'#e8c15a'},
+  {code:'hf_GC', label:'国际金价', group:'商品', color:'#e8c15a', gold:true}
 ];
+var DEFAULT_IDX = ['sh000001','sh000300','sz399006','sh000688','hkHSTECH','sh000905','hf_GC'];
+var IDX_KEY = 'fund_board_idx_config_v1';
+
+function loadIdxConfig(){
+  try{
+    var raw = localStorage.getItem(IDX_KEY);
+    // raw 存在且能解析成数组时，尊重用户选择（包括主动清空后的空数组）
+    if(raw !== null && raw !== undefined){
+      var arr = JSON.parse(raw);
+      if(Array.isArray(arr)){
+        var valid = new Set(IDX_ALL.map(function(x){ return x.code; }));
+        arr = arr.filter(function(c){ return valid.has(c); });
+        // 去重并截断，防止历史脏数据/重复触发导致状态错乱
+        var seen = new Set(), out = [];
+        arr.forEach(function(c){ if(!seen.has(c)){ seen.add(c); out.push(c); } });
+        return out.slice(0, 7);
+      }
+    }
+  }catch(e){}
+  return DEFAULT_IDX.slice();
+}
+function saveIdxConfig(arr){
+  try{ localStorage.setItem(IDX_KEY, JSON.stringify(arr.slice(0,7))); }catch(e){}
+}
+function getIdxItem(code){ return IDX_ALL.find(function(x){ return x.code === code; }); }
+function resetIdxConfig(){
+  saveIdxConfig(DEFAULT_IDX.slice());
+  openIdxConfig();
+  refreshAll();
+}
 
 /* 新浪全 A 列表（jsonp_v2 返回 callback 形如 var _cb=([...])，本地按 changepercent 统计涨跌家数）
    MV3 下不能用 <script> 注入（被 CSP script-src 'self' 拦截），改用 fetch + 文本解析 callback 数组 */
@@ -404,30 +449,104 @@ function sinaAllA(){
 }
 
 function renderIndices(tq, gold){
+  var cfg = loadIdxConfig();
+  var row = $('#idxRow');
+  if(row) row.style.display = cfg.length ? '' : 'none';
+  var sub = $('#idxSubtitle');
+  if(sub) sub.textContent = cfg.length ? cfg.map(function(c){ var it = getIdxItem(c); return it ? it.label : c; }).join(' / ') : '未选择任何指数';
   var html = '';
-  IDX.forEach(function(it){
-    var q = tq[it.code];
-    html += '<div class="idx-card"><div class="nm"><i style="background:' + it.color + '"></i>' + it.label + '</div>';
-    if(q){
-      html += '<div class="price">' + fmtNum(q.price) + '</div>'
-            + '<div class="chg ' + cls(q.pct) + '">' + fmtPct(q.pct) + '</div>'
-            + '<div class="src">今日涨幅 · 腾讯实时</div>';
+  cfg.forEach(function(code){
+    var it = getIdxItem(code);
+    if(!it) return;
+    html += '<div class="idx-card"><div class="nm"><i style="background:' + it.color + '"></i>' + escHtml(it.label) + '</div>';
+    if(it.gold){
+      if(gold){
+        html += '<div class="price">$' + fmtNum(gold.price) + '</div>'
+              + '<div class="chg ' + cls(gold.pct) + '">' + fmtPct(gold.pct) + '</div>'
+              + '<div class="src">COMEX黄金 · ' + (gold.src === 'tencent' ? '腾讯实时' : '东财实时') + '</div>';
+      }else{
+        html += '<div class="price muted">--</div><div class="chg muted">--</div><div class="src">暂无数据</div>';
+      }
     }else{
-      html += '<div class="price muted">--</div><div class="chg muted">--</div><div class="src">暂无数据</div>';
+      var q = tq[code];
+      if(q){
+        html += '<div class="price">' + fmtNum(q.price) + '</div>'
+              + '<div class="chg ' + cls(q.pct) + '">' + fmtPct(q.pct) + '</div>'
+              + '<div class="src">今日涨幅 · 腾讯实时</div>';
+      }else{
+        html += '<div class="price muted">--</div><div class="chg muted">--</div><div class="src">暂无数据</div>';
+      }
     }
     html += '</div>';
   });
-  html += '<div class="idx-card"><div class="nm"><i style="background:#e8c15a"></i>国际金价</div>';
-  if(gold){
-    html += '<div class="price">$' + fmtNum(gold.price) + '</div>'
-          + '<div class="chg ' + cls(gold.pct) + '">' + fmtPct(gold.pct) + '</div>'
-          + '<div class="src">COMEX黄金 · ' + (gold.src === 'tencent' ? '腾讯实时' : '东财实时') + '</div>';
-  }else{
-    html += '<div class="price muted">--</div><div class="chg muted">--</div><div class="src">暂无数据</div>';
-  }
-  html += '</div>';
   $('#idxRow').innerHTML = html;
 }
+
+/* 指数自选配置弹窗 */
+function openIdxConfig(){
+  var cfg = loadIdxConfig();
+  // 修复/去重后的配置落盘，覆盖可能因双重事件产生的脏数据
+  saveIdxConfig(cfg);
+  var groups = {};
+  IDX_ALL.forEach(function(it){ (groups[it.group] = groups[it.group] || []).push(it); });
+  var html = '';
+  Object.keys(groups).forEach(function(g){
+    html += '<div class="idx-group"><div class="idx-group-title">' + escHtml(g) + '</div><div class="idx-group-items">';
+    groups[g].forEach(function(it){
+      var isActive = cfg.indexOf(it.code) >= 0;
+      var checked = isActive ? 'checked' : '';
+      var activeCls = isActive ? ' active' : '';
+      html += '<label class="idx-cb' + (it.gold ? ' gold' : '') + activeCls + '">'
+            + '<input type="checkbox" data-evt="change" data-act="toggleIdx" data-args=\'["' + it.code + '","event"]\' ' + checked + '>'
+            + '<span>' + escHtml(it.label) + '</span></label>';
+    });
+    html += '</div></div>';
+  });
+  var body = $('#idxConfigBody');
+  if(body) body.innerHTML = html;
+  var cnt = $('#idxConfigCount');
+  if(cnt){ cnt.textContent = cfg.length; cnt.className = 'idx-count' + (cfg.length >= 7 ? ' warn' : ''); }
+  var sub = $('#idxSubtitle');
+  if(sub){
+    var names = cfg.map(function(c){ var it = getIdxItem(c); return it ? it.label : c; }).join(' / ');
+    sub.textContent = names || '未选择';
+  }
+  $('#maskIdxConfig').classList.add('show');
+}
+function toggleIdx(code, e){
+  var cfg = loadIdxConfig();
+  var el = e && e.target;
+  var checked = el ? el.checked : false;
+  var label = el && el.closest && el.closest('.idx-cb');
+  var pos = cfg.indexOf(code);
+  if(checked){
+    if(pos < 0){
+      if(cfg.length >= 7){
+        if(el) el.checked = false;
+        toast('最多选择 7 个指数');
+        return;
+      }
+      cfg.push(code);
+      saveIdxConfig(cfg);
+      if(label) label.classList.add('active');
+    }
+  }else{
+    if(pos >= 0){
+      cfg.splice(pos, 1);
+      saveIdxConfig(cfg);
+      if(label) label.classList.remove('active');
+    }
+  }
+  var cnt = $('#idxConfigCount');
+  if(cnt){ cnt.textContent = cfg.length; cnt.className = 'idx-count' + (cfg.length >= 7 ? ' warn' : ''); }
+  var sub = $('#idxSubtitle');
+  if(sub){
+    var names = cfg.map(function(c){ var it = getIdxItem(c); return it ? it.label : c; }).join(' / ');
+    sub.textContent = names || '未选择';
+  }
+  refreshAll();
+}
+function closeIdxConfig(){ $('#maskIdxConfig').classList.remove('show'); }
 
 /* ================= 渲染：涨跌家数 =================
    口径说明：东财 ulist.np 的 f104/f105/f106 是按「证券所属交易所」全量统计，
@@ -482,6 +601,40 @@ function renderBk(el, list){
           + '<span class="' + cls(pct) + '" style="font-weight:700">' + fmtPct(pct) + '</span></div>';
   });
   $(el).innerHTML = html || '<div class="muted" style="padding:10px 4px">暂无数据</div>';
+}
+
+/* ================= 卡片折叠（涨跌家数 / 领涨 / 领跌） ================= */
+var CARD_FOLD_KEY = 'fund_board_card_fold_v1';
+var CARD_FOLD_KEYS = ['zd','bkUp','bkDown'];
+function loadCardFold(){
+  try{
+    var raw = localStorage.getItem(CARD_FOLD_KEY);
+    if(raw){
+      var obj = JSON.parse(raw);
+      if(obj && typeof obj === 'object') return obj;
+    }
+  }catch(e){}
+  return {};
+}
+function saveCardFold(obj){
+  try{ localStorage.setItem(CARD_FOLD_KEY, JSON.stringify(obj)); }catch(e){}
+}
+function applyCardFold(key){
+  var fold = loadCardFold();
+  var collapsed = !!fold[key];
+  var body = $('[data-fold-body="' + key + '"]');
+  var btn = document.querySelector('[data-act="toggleCard"][data-args*=\'"' + key + '"\']');
+  if(body) body.style.display = collapsed ? 'none' : '';
+  if(btn) btn.textContent = collapsed ? '展示' : '收起';
+}
+function applyAllCardFold(){
+  CARD_FOLD_KEYS.forEach(function(k){ applyCardFold(k); });
+}
+function toggleCard(key){
+  var fold = loadCardFold();
+  fold[key] = !fold[key];
+  saveCardFold(fold);
+  applyCardFold(key);
 }
 
 /* ================= 渲染：持仓与汇总 ================= */
@@ -985,19 +1138,24 @@ async function refreshAll(){
   checkNoticeAlerts('fund');
   checkNoticeAlerts('stock');
 
-  /* 2. 指数 */
+  /* 2. 指数（按用户自选配置拉取，最多 7 个） */
+  var idxCfg = loadIdxConfig();
+  var tqCodes = idxCfg.filter(function(c){ var it = getIdxItem(c); return it && !it.gold; });
+  var showGold = idxCfg.indexOf('hf_GC') >= 0;
   var tq = {}, gold = null;
-  try{ tq = await fetchTencent(IDX.map(function(x){ return x.code; })); markSrc('tencent', Object.keys(tq).length > 0); }catch(e){ markSrc('tencent', false); }
+  try{ tq = tqCodes.length ? await fetchTencent(tqCodes) : {}; markSrc('tencent', Object.keys(tq).length > 0 || !tqCodes.length); }catch(e){ markSrc('tencent', false); }
   /* 国际金价：先东财，失败则降级腾讯 hf_GC（COMEX 黄金连续，美元/盎司） */
-  try{
-    var g = await jsonp('https://push2.eastmoney.com/api/qt/stock/get', {secid:'101.GC00Y', fltt:2, invt:2, fields:'f43,f58,f170'});
-    if(g && g.data && g.data.f43 !== null && g.data.f43 !== undefined){ gold = {price: g.data.f43, pct: g.data.f170, src:'eastmoney'}; }
-  }catch(e){}
-  if(!gold){
+  if(showGold){
     try{
-      var gq = await fetchTencent(['hf_GC']);
-      if(gq && gq['hf_GC'] && gq['hf_GC'].price){ gold = {price: gq['hf_GC'].price, pct: gq['hf_GC'].pct, src:'tencent'}; }
+      var g = await jsonp('https://push2.eastmoney.com/api/qt/stock/get', {secid:'101.GC00Y', fltt:2, invt:2, fields:'f43,f58,f170'});
+      if(g && g.data && g.data.f43 !== null && g.data.f43 !== undefined){ gold = {price: g.data.f43, pct: g.data.f170, src:'eastmoney'}; }
     }catch(e){}
+    if(!gold){
+      try{
+        var gq = await fetchTencent(['hf_GC']);
+        if(gq && gq['hf_GC'] && gq['hf_GC'].price){ gold = {price: gq['hf_GC'].price, pct: gq['hf_GC'].pct, src:'tencent'}; }
+      }catch(e){}
+    }
   }
   renderIndices(tq, gold);
 
@@ -1148,6 +1306,7 @@ async function refreshAll(){
     /* 恢复按钮 + 清并发锁。无论 refreshAll 内部是否抛错都执行 */
     _refreshing = false;
     if(_rBtn){ _rBtn.disabled = false; _rBtn.textContent = _rBtnTxt || '刷新'; }
+    applyAllCardFold();
   }
 }
 
@@ -1223,7 +1382,7 @@ function stockBatchRowHtml(s){
   var info = s.code ? stockInfo[s.code] : null;
   var name = info && info.name ? info.name : (s.code ? '（保存后加载）' : '');
   var mv = (info && info.price && s.shares) ? fmtNum(s.shares * info.price) : '--';
-  return '<td><input class="code-in" data-f="code" maxlength="6" value="' + (s.code ? s.code.replace(/^(sh|sz)/, '') : '') + '" placeholder="6位代码"></td>'
+  return '<td><input class="code-in" data-f="code" maxlength="12" value="' + (s.code || '') + '" placeholder="代码(如 600519 / hk00700 / AAPL)"></td>'
        + '<td style="text-align:left" class="muted">' + escHtml(name) + '</td>'
        + '<td><input data-f="shares" type="number" step="1" value="' + (s.shares || '') + '" placeholder="必填"></td>'
        + '<td><input data-f="cost" type="number" step="0.001" value="' + (s.cost || '') + '" placeholder="选填"></td>'
@@ -1338,7 +1497,7 @@ function saveStockBatch(){
     var raw = get('code');
     if(!raw){ continue; } /* 空行跳过 */
     var code = normStockCode(raw);
-    if(!code){ alert('第 ' + (i+1) + ' 行代码「' + raw + '」无效（6 位数字，6 开头 = 沪市，0/3 开头 = 深市）'); return; }
+    if(!code){ alert('第 ' + (i+1) + ' 行代码「' + raw + '」无效（A股6位 / 港股 hk00000 / 美股 AAPL）'); return; }
     if(seen[code]){ alert('代码 ' + code + ' 重复了，请合并为一行'); return; }
     seen[code] = true;
     var shares = parseFloat(get('shares'));
@@ -1369,8 +1528,17 @@ var stockInfo = {}; /* code -> {name, price, prevClose, pct} */
    交易所映射（按前两位细分，因 1 开头既可能是沪市可转债 11，也可能是深市基金 15/16/18）：
      沪市 sh：6 股票 / 5 基金(ETF·LOF·REITs) / 9 B股 / 11 可转债
      深市 sz：0/3 股票(含创业板) / 2 B股 / 12 可转债 / 15 ETF / 16 LOF / 18 REITs / 10 国债(兜底) */
+/* 规范化为腾讯行情代码（与 fetchTencent 直接喂的格式一致）。
+   A股: sh/sz + 6位；港股: hk + 5位（00700.HK / hk00700）；美股: us + 字母（AAPL / AAPL.US / BRK.B / usBRK.B）。
+   港股必须带 .HK 或 hk 前缀，避免与 A 股数字混淆；美股按字母识别（带点如 BRK.B 视为同一只）。 */
 function normStockCode(v){
   v = (v || '').trim().toLowerCase();
+  var m;
+  if((m = v.match(/^(?:hk)?(\d{4,5})\.hk$/)))   return 'hk' + m[1].replace(/^0+/, '').padStart(5, '0'); // 00700.HK
+  if((m = v.match(/^hk(\d{4,5})$/)))            return 'hk' + m[1].replace(/^0+/, '').padStart(5, '0'); // 已规范 hk00700
+  if((m = v.match(/^(?:us)?([a-z]{1,6})(?:\.[a-z]{1,3})?\.us$/))) return 'us' + m[1].toUpperCase();     // AAPL.US
+  if((m = v.match(/^us([a-z]{1,6})(?:\.[a-z]{1,3})?$/)))      return 'us' + m[1].toUpperCase();          // 已规范 usAAPL
+  if((m = v.match(/^([a-z]{1,6})(?:\.[a-z]{1,3})?$/)))        return 'us' + m[1].toUpperCase();          // 纯字母 AAPL / BRK.B
   if(/^(sh|sz)\d{6}$/.test(v)) return v;
   if(/^\d{6}$/.test(v)){
     var f2 = v.slice(0,2);
@@ -1389,7 +1557,9 @@ function normStockCode(v){
 function classifyStockType(rawCode){
   var nc = normStockCode(rawCode);
   if(!nc) return {cls:'other', label:'未知', exchName:''};
-  var c = nc.replace(/^(sh|sz)/, '');
+  if(/^hk/.test(nc)) return {cls:'hk', label:'港股', exchName:'港股'};
+  if(/^us/.test(nc)) return {cls:'us', label:'美股', exchName:'美股'};
+  var c = nc.replace(/^(sh|sz|hk|us)/, '');
   var exch = nc.slice(0, 2);                                  // 'sh' | 'sz'
   var exchName = exch === 'sh' ? '沪市' : '深市';
   var f2 = c.slice(0,2), f3 = c.slice(0,3);
@@ -1446,7 +1616,7 @@ function renderStocks(){
     var _stkType = s.type || classifyStockType(s.code).cls;
     html += '<tr><td title="' + escHtml(_stkNm) + '">' + escHtml(_stkNm) + '</td>'
           + '<td>' + typeTag(_stkType) + '</td>'
-          + '<td>' + s.code.replace(/^(sh|sz)/, '') + '</td>'
+          + '<td>' + s.code.replace(/^(sh|sz|hk|us)/, '') + '</td>'
           + '<td>' + fmtNum(price) + '</td>'
           + '<td>' + fmtNum(mv) + '</td>'
           + '<td>' + (s.shares ? Number(s.shares).toLocaleString() : '--') + '</td>'
@@ -1646,7 +1816,7 @@ var editingStock = null;
 function openStockModal(code){
   editingStock = code || null;
   var s = code ? stocks.find(function(x){ return x.code === code; }) : null;
-  $('#stkModalTitle').textContent = s ? ('编辑 ' + (s.type ? classifyStockType(s.code).label + ' ' : '持仓 ') + code.replace(/^(sh|sz)/, '')) : '添加股票 / 场内基金';
+  $('#stkModalTitle').textContent = s ? ('编辑 ' + (s.type ? classifyStockType(s.code).label + ' ' : '持仓 ') + code.replace(/^(sh|sz|hk|us)/, '')) : '添加股票 / 场内基金';
   $('#inStkCode').value = s ? s.code : '';
   $('#inStkCode').disabled = !!s;
   $('#inStkShares').value = s && s.shares ? s.shares : '';
@@ -1672,7 +1842,7 @@ function updateStkTypeHint(){
   var sel = $('#inStkType');
   if(!raw){ hint.className='stk-type-hint'; hint.innerHTML=''; if(sel) sel.dataset.touched=''; return; }
   var nc = normStockCode(raw);
-  if(!nc){ hint.className='stk-type-hint bad'; hint.innerHTML='⚠ 无法识别，请输入 6 位 A 股 / 场内基金代码'; if(sel) sel.dataset.touched=''; return; }
+  if(!nc){ hint.className='stk-type-hint bad'; hint.innerHTML='⚠ 无法识别，请输入 A股6位 / 港股 00000.HK / 美股 AAPL'; if(sel) sel.dataset.touched=''; return; }
   var t = classifyStockType(nc);
   hint.className='stk-type-hint ok';
   hint.innerHTML='识别为：<b>' + t.label + '</b>（' + t.exchName + '）';
@@ -1680,7 +1850,7 @@ function updateStkTypeHint(){
 }
 /* 类型标签小胶囊（渲染表格用） */
 function typeTag(cls){
-  var map = {stock:'股票', etf:'ETF', lof:'LOF', reits:'REITs', bond:'可转债', fund:'基金', other:'其他'};
+  var map = {stock:'股票', etf:'ETF', lof:'LOF', reits:'REITs', bond:'可转债', fund:'基金', other:'其他', hk:'港股', us:'美股'};
   return '<span class="tag tag-' + (cls || 'other') + '">' + (map[cls] || '其他') + '</span>';
 }
 function saveStock(){
@@ -1704,7 +1874,7 @@ function saveStock(){
   saveStocks(); closeStockModal(); refreshAll();
 }
 function delStock(code){
-  if(!confirm('确认删除股票 ' + code.replace(/^(sh|sz)/, '') + '？')) return;
+  if(!confirm('确认删除股票 ' + code.replace(/^(sh|sz|hk|us)/, '') + '？')) return;
   stocks = stocks.filter(function(s){ return s.code !== code; });
   delete stockInfo[code];
   saveStocks(); refreshAll();
@@ -1765,11 +1935,13 @@ function fetchFundExists(code){
     setTimeout(function(){ if(!done){ identLog('总超时'); finish(null); } }, 11000);
   });
 }
-/* 异步确认该 6 位代码是否为场内可交易品种（腾讯双向探测 sh/sz 前缀）。
-   返回 {key:'sh600519', name:'贵州茅台'} 或 null —— 命中的同时也带名字回弹窗展示/入库 */
+/* 异步确认该代码是否为可交易品种，返回腾讯代码 + 名称。
+   港股/美股（nc 以 hk/us 开头）直接探对应腾讯代码；A 股则双向探测 sh/sz 前缀。
+   命中同时带回名字，供弹窗展示与入库。 */
 function probeStock(raw){
   return new Promise(function(resolve){
-    var ks = ['sh' + raw, 'sz' + raw];
+    var nc = normStockCode(raw);
+    var ks = (/^hk|^us/.test(nc || '')) ? [nc] : ['sh' + (raw || ''), 'sz' + (raw || '')];
     fetchTencent(ks).then(function(out){
       var hit = ks.filter(function(k){ return out[k]; })[0];
       resolve(hit ? {key: hit, name: out[hit].name || hit} : null);
@@ -1779,18 +1951,43 @@ function probeStock(raw){
 function onAddCodeInput(){
   var raw = ($('#inAddCode').value || '').trim();
   var box = $('#addIdentResult');
-  if(!/^\d{6}$/.test(raw)){
+  function resetEmpty(){
     addState = {status:'empty', fundName:null, stkKey:null, stkName:null, kind:null};
     box.innerHTML = '';
     box.className = 'add-ident';
     $('#addFundFields').classList.remove('show');
     $('#addStkFields').classList.remove('show');
-    return;
   }
+  var nc = normStockCode(raw);
+  if(!nc){ resetEmpty(); return; }
   box.className = 'add-ident';
   box.innerHTML = '<span class="ident-loading">识别中…</span>';
   $('#addFundFields').classList.remove('show');
   $('#addStkFields').classList.remove('show');
+  /* 港股 / 美股：腾讯直接探，跳过东财基金库（基金库只收 A 股基金） */
+  if(/^hk|^us/.test(nc)){
+    probeStock(raw).then(function(stkRes){
+      var stkKey = stkRes && stkRes.key ? stkRes.key : null;
+      var stkName = stkRes && stkRes.name ? stkRes.name : null;
+      addState.fundName = null; addState.stkKey = stkKey; addState.stkName = stkName;
+      if(stkKey){
+        addState.status = 'stock'; addState.kind = 'stock';
+        var t = classifyStockType(stkKey);
+        box.innerHTML = '<span class="ident-card"><span class="ident-type">'+escHtml(t.label)+' · '+escHtml(t.exchName)+'</span><span class="ident-name">'+escHtml(stkName || '—')+'</span></span>';
+      }else{
+        addState.status = 'none'; addState.kind = null;
+        box.className = 'add-ident ident-bad';
+        box.innerHTML = '<span>未找到该'+(nc[0]==='h'?'港股':'美股')+'代码，请确认输入</span>';
+      }
+      setAddFields();
+    }).catch(function(){
+      addState.status = 'none'; addState.kind = null;
+      box.className = 'add-ident ident-bad';
+      box.innerHTML = '<span>识别服务暂时不可用，请稍后重试</span>';
+    });
+    return;
+  }
+  /* A 股：基金库 + 腾讯双向探测（原逻辑） */
   Promise.all([fetchFundExists(raw), probeStock(raw)]).then(function(res){
     var fName = res[0];
     var stkRes = res[1] || {};
@@ -1870,7 +2067,7 @@ function closeAddModal(){
 }
 function saveAdd(){
   var code = ($('#inAddCode').value || '').trim();
-  if(!/^\d{6}$/.test(code)){ alert('请输入 6 位代码'); return; }
+  if(!normStockCode(code)){ alert('请输入有效代码（A股6位 / 港股 00000.HK / 美股 AAPL）'); return; }
   if(addState.status === 'empty' || addState.status === 'none'){ alert('未能识别该代码，请检查后重试'); return; }
   if(addState.status === 'both' && !addState.kind){ alert('请选择「场外基金」或「场内交易」'); return; }
   if(addState.kind === 'fund'){
@@ -2037,7 +2234,7 @@ function checkPriceAlerts(){
       var f = alerts.fired[key];
       if(!(f && f.date === ds && f.dir === dir)){
         alerts.fired[key] = {date: ds, dir: dir};
-        addAlert((q.name || s.code) + '（' + s.code.replace(/^(sh|sz)/, '') + '）实时涨幅 ' + fmtPct(pct) + '，' + (pct > 0 ? '超过' : '跌破') + '阈值 ±' + th + '%');
+        addAlert((q.name || s.code) + '（' + s.code.replace(/^(sh|sz|hk|us)/, '') + '）实时涨幅 ' + fmtPct(pct) + '，' + (pct > 0 ? '超过' : '跌破') + '阈值 ±' + th + '%');
       }
     }
   });
@@ -2063,7 +2260,7 @@ async function checkNoticeAlerts(kind){
     items = stocks;
     getName = function(s){
       var q = stockInfo[s.code];
-      return (q && q.name) || s.code.replace(/^(sh|sz)/,'');
+      return (q && q.name) || s.code.replace(/^(sh|sz|hk|us)/,'');
     };
   }
   var seenMap = (kind === 'fund') ? 'seenNotice' : 'seenStockNotice';
@@ -2071,7 +2268,8 @@ async function checkNoticeAlerts(kind){
   for(var i = 0; i < items.length; i++){
     var it = items[i];
     var code = it.code;
-    var pureCode = String(code).replace(/^(sh|sz)/, '');
+    if(/^(hk|us)/.test(code)) continue; // 港股/美股公告源未接入，本轮暂不触发公告提醒
+    var pureCode = String(code).replace(/^(sh|sz|hk|us)/, '');
     try{
       var param = {uid:'', keyword:pureCode, type:['notice'], client:'web', clientVersion:'curr', clientType:'web',
                    param:{notice:{pageIndex:1, pageSize:5}}};
@@ -2667,9 +2865,9 @@ function renderAlertRows(){
   var shtml = '';
   stocks.forEach(function(s){
     var info = stockInfo[s.code];
-    var nm = (info && info.name) || s.code.replace(/^(sh|sz)/,'');
+    var nm = (info && info.name) || s.code.replace(/^(sh|sz|hk|us)/,'');
     var v = stkOv[s.code];
-    var pureCode = s.code.replace(/^(sh|sz)/,'');
+    var pureCode = s.code.replace(/^(sh|sz|hk|us)/,'');
     var muted = !!stkMuted[s.code];
     var act = muted
       ? '<span class="row-act"><span class="link" data-act="unmuteStockAlert" data-args=\'["' + s.code + '"]\'>恢复提醒</span></span>'
@@ -2905,7 +3103,7 @@ function clickImportFile(){
   if(inp) inp.click();
 }
 function exportData(){
-  var blob = new Blob([JSON.stringify({funds: holdings, stocks: stocks}, null, 2)], {type:'application/json'});
+  var blob = new Blob([JSON.stringify({funds: holdings, stocks: stocks, idxConfig: loadIdxConfig()}, null, 2)], {type:'application/json'});
   var a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
   a.download = 'fund_holdings.json';
@@ -2927,6 +3125,11 @@ function importData(ev){
                      .map(function(x){ return {code: x.code, name: typeof x.name === 'string' ? x.name.trim().slice(0, 40) || undefined : undefined, shares: x.shares > 0 ? x.shares : null, cost: x.cost > 0 ? x.cost : null, amount: x.amount > 0 ? x.amount : null}; });
       stocks = stkArr.filter(function(x){ return normStockCode(x.code) && x.shares > 0; })
                      .map(function(x){ var c = normStockCode(x.code); return {code: c, shares: x.shares, cost: x.cost > 0 ? x.cost : null, type: classifyStockType(c).cls}; });
+      if(Array.isArray(data.idxConfig) && data.idxConfig.length > 0 && data.idxConfig.length <= 7){
+        var valid = new Set(IDX_ALL.map(function(x){ return x.code; }));
+        var filtered = data.idxConfig.filter(function(c){ return valid.has(c); });
+        if(filtered.length > 0) saveIdxConfig(filtered);
+      }
       saveHoldings(); saveStocks(); refreshAll();
     }catch(e){ alert('导入失败：文件格式不正确'); }
   };
@@ -2937,6 +3140,7 @@ function importData(ev){
 updateAlertBadge();
 applyAuto();
 applyTheme();
+applyAllCardFold();
 refreshAll();
 
 /* 添加股票弹窗：输入代码实时识别品种 / 手动改类型标记 */

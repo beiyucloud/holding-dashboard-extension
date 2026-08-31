@@ -70,6 +70,7 @@
   /* 今日盈亏卡：label 同行放时间戳，下方按品种拆分 */
   .label-flex{display:flex;justify-content:space-between;align-items:baseline;}
   .label-flex .ts{font-size:11px;color:var(--muted);font-weight:400;}
+  .fold-btn{font-size:11px;padding:3px 9px;line-height:1.2;border-radius:5px;}
   .pnl-split{margin-top:8px;display:flex;flex-direction:column;gap:4px;font-size:12px;}
   .pnl-row{display:flex;align-items:center;gap:6px;color:var(--muted);font-variant-numeric:tabular-nums;}
   .pnl-row .dot{width:7px;height:7px;border-radius:50%;flex:none;}
@@ -118,6 +119,21 @@
   .idx-card .price{font-size:16px;font-weight:700;margin:4px 0;}
   .idx-card .chg{font-size:15px;font-weight:700;}
   .idx-card .src{font-size:11px;color:var(--muted);margin-top:4px;}
+  .idx-config-body{max-height:58vh;overflow:auto;padding-right:4px;}
+  .idx-group{margin-bottom:18px;}
+  .idx-group-title{font-size:11px;color:var(--muted);margin-bottom:10px;font-weight:600;letter-spacing:.6px;text-transform:uppercase;}
+  .idx-group-items{display:flex;flex-wrap:wrap;gap:8px;}
+  .idx-cb{display:flex;align-items:center;gap:7px;background:var(--panel2);border:1px solid var(--border);border-radius:7px;padding:7px 12px;font-size:13px;line-height:1;cursor:pointer;user-select:none;transition:.15s;white-space:nowrap;flex:0 0 auto;}
+  .idx-config-body .idx-cb input{margin:0;padding:0;width:14px;height:14px;flex:none;cursor:pointer;background:transparent;border:none;border-radius:0;font-size:inherit;font-family:inherit;box-shadow:none;outline:none;}
+  .idx-cb span{white-space:nowrap;}
+  .idx-cb:hover{border-color:var(--blue);background:var(--row-hover);}
+  .idx-cb.gold{border-color:rgba(232,193,90,.35);}
+  .idx-cb input:checked + span{color:var(--text);font-weight:600;}
+  .idx-cb.active{background:rgba(79,140,255,.12);border-color:var(--blue);box-shadow:0 0 0 1px var(--blue) inset;}
+  .idx-cb.gold.active{background:rgba(232,193,90,.12);border-color:#e8c15a;box-shadow:0 0 0 1px #e8c15a inset;}
+  .idx-count{font-size:12px;color:var(--muted);font-weight:400;}
+  .idx-count.warn b{color:var(--red);}
+  .idx-count b{color:var(--blue);}
 
   /* ===== 底部三栏 ===== */
   .row3{display:grid;grid-template-columns:1.3fr 1fr 1fr;gap:14px;margin-bottom:16px;}
@@ -341,6 +357,8 @@
   .tag-bond{background:rgba(45,212,191,.18);color:#2dd4bf;}
   .tag-fund{background:rgba(47,168,120,.18);color:#23b573;}
   .tag-other{background:rgba(124,138,165,.12);color:#7c8aa5;}
+  .tag-hk{background:rgba(250,204,21,.18);color:#e6b400;}
+  .tag-us{background:rgba(232,90,120,.18);color:#e85a78;}
   /* 添加股票弹窗：实时识别提示 + 类型下拉 */
   .stk-type-hint{font-size:12px;line-height:1.5;min-height:18px;margin:-4px 0 2px;color:var(--muted);}
   .stk-type-hint.ok{color:var(--green);}
@@ -572,28 +590,42 @@
 </div>
 
 <!-- 第二行：指数 -->
-<div class="sec-title">各主体实时<small>沪市主板 / 沪深300 / 创业板指 / 科创50 / 恒生科技 / 中证500 / 国际金价</small></div>
+<div class="sec-title" style="display:flex;align-items:center;justify-content:space-between;gap:10px;">
+  <span>各主体实时<small id="idxSubtitle">沪市主板 / 沪深300 / 创业板指 / 科创50 / 恒生科技 / 中证500 / 国际金价</small></span>
+  <button class="btn" style="font-size:12px;padding:4px 10px;white-space:nowrap" data-act="openIdxConfig">编辑显示</button>
+</div>
 <div class="idx-row" id="idxRow"></div>
 
 <!-- 第三行：涨跌家数 + 板块 -->
 <div class="row3">
   <div class="card">
-    <div class="label">今日涨跌家数（沪深京全市场）</div>
-    <div class="zd-num">
-      <span class="big up" id="upCnt">--</span><span class="muted">涨 / 跌</span><span class="big down" id="downCnt">--</span>
-      <span class="muted" style="margin-left:auto" id="flatCnt">平盘 --</span>
+    <div class="label label-flex">
+      <span>今日涨跌家数（沪深京全市场）</span>
+      <button class="btn ghost fold-btn" data-act="toggleCard" data-args='["zd"]'>收起</button>
     </div>
-    <div class="zd-bar"><div class="u" id="barU" style="width:50%"></div><div class="d" id="barD" style="width:50%"></div></div>
-    <div class="sub" id="zdSub">上涨 -- · 下跌 --</div>
-    <div class="sub" id="zdDetail" style="margin-top:3px;font-size:11px;line-height:1.6;"></div>
+    <div data-fold-body="zd">
+      <div class="zd-num">
+        <span class="big up" id="upCnt">--</span><span class="muted">涨 / 跌</span><span class="big down" id="downCnt">--</span>
+        <span class="muted" style="margin-left:auto" id="flatCnt">平盘 --</span>
+      </div>
+      <div class="zd-bar"><div class="u" id="barU" style="width:50%"></div><div class="d" id="barD" style="width:50%"></div></div>
+      <div class="sub" id="zdSub">上涨 -- · 下跌 --</div>
+      <div class="sub" id="zdDetail" style="margin-top:3px;font-size:11px;line-height:1.6;"></div>
+    </div>
   </div>
   <div class="card">
-    <div class="label">领涨板块 TOP3（行业板块）</div>
-    <div id="bkUp"></div>
+    <div class="label label-flex">
+      <span>领涨板块 TOP3（行业板块）</span>
+      <button class="btn ghost fold-btn" data-act="toggleCard" data-args='["bkUp"]'>收起</button>
+    </div>
+    <div data-fold-body="bkUp" id="bkUp"></div>
   </div>
   <div class="card">
-    <div class="label">领跌板块 TOP3（行业板块）</div>
-    <div id="bkDown"></div>
+    <div class="label label-flex">
+      <span>领跌板块 TOP3（行业板块）</span>
+      <button class="btn ghost fold-btn" data-act="toggleCard" data-args='["bkDown"]'>收起</button>
+    </div>
+    <div data-fold-body="bkDown" id="bkDown"></div>
   </div>
 </div>
 
@@ -610,7 +642,7 @@
 
 <!-- 股票持仓 -->
 <div id="stockSection" style="margin-bottom:14px">
-<div class="sec-title">我的股票<small>实时行情为真实成交价（无估算偏差）；代码输 6 位数字，自动识别沪深</small></div>
+<div class="sec-title">我的股票<small>实时行情为真实成交价（无估算偏差）；支持 A股6位 / 港股 00000.HK / 美股 AAPL（自动识别）</small></div>
 <div id="stockTableWrap" class="card table-wrap">
   <table>
     <thead><tr><th>名称</th><th>类型</th><th>代码</th><th>现价</th><th>市值(元)</th><th>持仓股数</th><th>成本价</th><th>涨跌幅</th><th>今日盈亏(元)</th><th>持仓收益率</th><th>累计盈亏(元)</th><th>操作</th></tr></thead>
@@ -620,7 +652,7 @@
 </div>
 
 <div class="footer">
-  <div>看板版本 v60（2026-08-28）· 数据通道：<span id="srcStatus">检测中…</span>（若有 ✗ 请刷新重试）· <a href="https://beiyucloud.taoxinyuan.com" target="_blank" rel="noopener noreferrer" style="color:var(--blue);text-decoration:none">持仓实时盈亏看板</a> · <a href="privacy.html" target="_blank" rel="noopener noreferrer" style="color:var(--blue);text-decoration:none">隐私政策</a></div>
+  <div>看板版本 v62（2026-08-30）· 数据通道：<span id="srcStatus">检测中…</span>（若有 ✗ 请刷新重试）· <a href="https://beiyucloud.taoxinyuan.com" target="_blank" rel="noopener noreferrer" style="color:var(--blue);text-decoration:none">持仓实时盈亏看板</a> · <a href="privacy.html" target="_blank" rel="noopener noreferrer" style="color:var(--blue);text-decoration:none">隐私政策</a></div>
   数据来源：新浪财经（盘中实时估算）· 天天基金移动端接口（净值/重仓股）· 腾讯行情（指数）· 东方财富（个股实时行情 / 涨跌家数 / 行业板块 / 国际金价）。<br>
   计算口径：填份额时 今日盈亏 = 份额 ×（估算净值 − 昨日净值）（盘中/盘后显示实时估算）；持有收益率 = 已结算市值 ÷（份额 × 成本价）− 1，净值未公布时沿用上一交易日确认净值、不随盘中估值跳动，净值公布后自动更新；未填份额时按「持有市值 × 估算涨幅」近似。<br>
   「实时估算」为新浪基于基金前十大重仓股/债券/ETF 的加权估算（分钟级）；「重仓估算」为本页按前十大重仓股实时行情的自建兜底估算。估算均基于上季持仓，与实际净值有偏差，仅供参考。<br>
@@ -683,7 +715,7 @@
       <span class="close-x" data-act="closeAddModal" title="关闭">×</span>
     </h3>
     <div class="tip">输入代码自动识别品种；同代码同时存在（如 LOF）时可手动指定为「场外基金」或「场内交易」。</div>
-    <input id="inAddCode" class="code-inp" placeholder="如 161725 / 600519" maxlength="8" autocomplete="off" data-evt="input" data-act="onAddCodeInput">
+    <input id="inAddCode" class="code-inp" placeholder="如 161725 / 00700.HK / AAPL" maxlength="12" autocomplete="off" data-evt="input" data-act="onAddCodeInput">
     <div id="addIdentResult" class="add-ident"></div>
     <!-- 场外基金字段 -->
     <div id="addFundFields" class="add-fields">
@@ -723,6 +755,8 @@
             <option value="reits">REITs</option>
             <option value="bond">可转债</option>
             <option value="fund">场内基金</option>
+            <option value="hk">港股</option>
+            <option value="us">美股</option>
             <option value="other">其他</option>
           </select>
         </div>
@@ -755,15 +789,17 @@
     <div id="stkTypeHint" class="stk-type-hint"></div>
     <div class="stk-type-row">
       <label class="stk-type-lbl">品种类型</label>
-      <select id="inStkType" class="stk-type-sel">
-        <option value="stock">股票</option>
-        <option value="etf">ETF</option>
-        <option value="lof">LOF</option>
-        <option value="reits">REITs</option>
-        <option value="bond">可转债</option>
-        <option value="fund">场内基金</option>
-        <option value="other">其他</option>
-      </select>
+        <select id="inStkType" class="stk-type-sel">
+          <option value="stock">股票</option>
+          <option value="etf">ETF</option>
+          <option value="lof">LOF</option>
+          <option value="reits">REITs</option>
+          <option value="bond">可转债</option>
+          <option value="fund">场内基金</option>
+          <option value="hk">港股</option>
+          <option value="us">美股</option>
+          <option value="other">其他</option>
+        </select>
     </div>
     <input id="inStkShares" placeholder="持仓数量（股/份），如 1000" type="number">
     <input id="inStkCost" placeholder="成本价（选填），如 1680.500" type="number" step="0.001">
@@ -818,6 +854,19 @@
       <span class="link" data-act="clearAlertLog">清空</span></h3>
     <div class="alert-log" id="alertLog"></div>
     <div class="ops" style="margin-top:14px;"><button class="btn ghost" data-act="closeAlerts">关闭</button></div>
+  </div>
+</div>
+
+<!-- 指数自选弹窗 -->
+<div class="mask" id="maskIdxConfig">
+  <div class="modal" style="width:440px;max-width:94vw;">
+    <h3 style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">指数显示设置<span class="idx-count">已选 <b id="idxConfigCount">0</b> / 7</span></h3>
+    <div class="tip" style="margin-bottom:12px;">勾选想在首页看到的指数卡片，最多 7 个，不选时自动折叠此栏。</div>
+    <div class="idx-config-body" id="idxConfigBody"></div>
+    <div class="ops" style="justify-content:space-between;">
+      <button class="btn ghost" data-act="resetIdxConfig">恢复默认</button>
+      <button class="btn ghost" data-act="closeIdxConfig">关闭</button>
+    </div>
   </div>
 </div>
 
