@@ -49,20 +49,28 @@ var LS_KEY = 'fund_board_holdings_v2';
 
 /* ================= 主题（浅色 / 深色） ================= */
 var THEME_KEY = 'fund_board_theme';
+/* 主题切换图标（内联 SVG，图标表示「当前所处主题」：浅色=太阳，深色=月亮） */
+var ICON_SUN  = '<svg viewBox="0 0 24 24"><path d="M12 7c-2.76 0-5 2.24-5 5s2.24 5 5 5 5-2.24 5-5-2.24-5-5-5zM2 13h2c.55 0 1-.45 1-1s-.45-1-1-1H2c-.55 0-1 .45-1 1s.45 1 1 1zm18 0h2c.55 0 1-.45 1-1s-.45-1-1-1h-2c-.55 0-1 .45-1 1s.45 1 1 1zM11 2v2c0 .55.45 1 1 1s1-.45 1-1V2c0-.55-.45-1-1-1s-1 .45-1 1zm0 18v2c0 .55.45 1 1 1s1-.45 1-1v-2c0-.55-.45-1-1-1s-1 .45-1 1zM5.99 4.58a.996.996 0 0 0-1.41 0 .996.996 0 0 0 0 1.41l1.06 1.06c.39.39 1.03.39 1.41 0s.39-1.03 0-1.41L5.99 4.58zm12.37 12.37a.996.996 0 0 0-1.41 0 .996.996 0 0 0 0 1.41l1.06 1.06c.39.39 1.03.39 1.41 0a.996.996 0 0 0 0-1.41l-1.06-1.06zm1.06-10.96a.996.996 0 0 0 0-1.41.996.996 0 0 0-1.41 0l-1.06 1.06c-.39.39-.39 1.03 0 1.41s1.03.39 1.41 0l1.06-1.06zM7.05 18.36a.996.996 0 0 0 0-1.41.996.996 0 0 0-1.41 0l-1.06 1.06c-.39.39-.39 1.03 0 1.41s1.03.39 1.41 0l1.06-1.06z"/></svg>';
+var ICON_MOON = '<svg viewBox="0 0 24 24"><path d="M12 3c-4.97 0-9 4.03-9 9s4.03 9 9 9 9-4.03 9-9c0-.46-.04-.92-.1-1.36a5.389 5.389 0 0 1-4.4 2.26 5.403 5.403 0 0 1-3.14-9.8c-.44-.06-.9-.1-1.36-.1z"/></svg>';
+function setThemeButton(t){
+  var btn = document.getElementById('themeToggle');
+  if(!btn) return;
+  btn.innerHTML = (t === 'light') ? ICON_SUN : ICON_MOON;
+  btn.title = (t === 'light') ? '当前浅色，点击切深色' : '当前深色，点击切浅色';
+  btn.setAttribute('aria-label', btn.title);
+}
 function applyTheme(){
   var t = 'dark';
   try{ var s = localStorage.getItem(THEME_KEY); if(s === 'light' || s === 'dark') t = s; }catch(e){}
   document.documentElement.setAttribute('data-theme', t);
-  var btn = document.getElementById('themeToggle');
-  if(btn){ btn.textContent = (t === 'light') ? '☀ 浅色' : '🌙 深色'; }
+  setThemeButton(t);
 }
 function toggleTheme(){
   var cur = document.documentElement.getAttribute('data-theme') === 'light' ? 'light' : 'dark';
   var next = cur === 'light' ? 'dark' : 'light';
   try{ localStorage.setItem(THEME_KEY, next); }catch(e){}
   document.documentElement.setAttribute('data-theme', next);
-  var btn = document.getElementById('themeToggle');
-  if(btn){ btn.textContent = (next === 'light') ? '☀ 浅色' : '🌙 深色'; }
+  setThemeButton(next);
   refreshAll(); /* 重绘界面与 ECharts（主题色随之切换） */
 }
 /* 读取当前主题对应的图表颜色（ECharts 不支持 CSS 变量，需运行时取） */
@@ -244,11 +252,8 @@ function loadHoldings(){
 function saveHoldings(){ try{ localStorage.setItem(LS_KEY, JSON.stringify(holdings)); }catch(e){ console.error('[ext] saveHoldings 失败:', e && e.message || e); toast('持仓保存失败：存储已满或隐私模式'); } }
 var holdings = loadHoldings();
 if(!holdings){
-  holdings = [
-    {code:'161725', shares:8000, cost:1.2500, amount:10000},
-    {code:'110022', shares:3000, cost:2.6500, amount:8000},
-    {code:'003096', amount:6000}
-  ];
+  /* 初始安装为空仓状态，不再预置示例持仓；用户可点击顶栏「+」添加 */
+  holdings = [];
   saveHoldings();
 }
 var fundInfo = {}; /* code -> {name, gszzl, gsz, dwjz, gztime, trend} */
@@ -436,6 +441,11 @@ function saveIdxConfig(arr){
 function getIdxItem(code){ return IDX_ALL.find(function(x){ return x.code === code; }); }
 function resetIdxConfig(){
   saveIdxConfig(DEFAULT_IDX.slice());
+  openIdxConfig();
+  refreshAll();
+}
+function selectNoneIdxConfig(){
+  saveIdxConfig([]);
   openIdxConfig();
   refreshAll();
 }
@@ -712,7 +722,7 @@ function renderHoldings(){
           + '<td class="' + cumAllCls + '">' + (hasCost ? fmtSigned(cumAll) : '--') + '</td>'
           + '<td></td></tr>';
   }
-  $('#holdBody').innerHTML = html || '<tr><td colspan="8" class="muted" style="text-align:center;padding:20px">暂无持仓，点击右上角「添加基金」</td></tr>';
+  $('#holdBody').innerHTML = html || '<tr><td colspan="8" class="muted" style="text-align:center;padding:20px">暂无基金持仓，点击顶部 <b>+</b> 按钮添加</td></tr>';
 
   /* 兼容 hasPnl 标志（原本是单独循环算的） */
   var hasPnl = false, latestNavDate = '';
@@ -860,10 +870,10 @@ async function refreshAll(){
   /* 并发锁：用户连点刷新或自动定时器撞手动刷新时直接跳过，避免接口被双倍调用（东财 push2 风控敏感） */
   if(_refreshing){ return; }
   _refreshing = true;
-  /* loading 反馈：禁用按钮 + 改文字，让用户知道点了生效 */
+  /* loading 反馈：禁用按钮 + 图标按钮改为 spinner，让用户知道点了生效 */
   var _rBtn = document.querySelector('[data-act="refreshAll"]');
-  var _rBtnTxt = _rBtn ? _rBtn.textContent : null;
-  if(_rBtn){ _rBtn.disabled = true; _rBtn.textContent = '刷新中…'; }
+  var _rBtnHtml = _rBtn ? _rBtn.innerHTML : null;
+  if(_rBtn){ _rBtn.disabled = true; _rBtn.innerHTML = '<svg class="spin" viewBox="0 0 24 24" style="width:16px;height:16px;fill:currentColor"><path d="M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2zm0 18a8 8 0 1 1 8-8 8 8 0 0 1-8 8z" opacity=".25"/><path d="M12 2a10 10 0 0 1 10 10h-2a8 8 0 0 0-8-8z"/></svg>'; }
   try{
   marketStatus();
   $('#chartTime').textContent = new Date().toTimeString().slice(0, 8) + ' 更新';
@@ -1305,7 +1315,7 @@ async function refreshAll(){
   } finally {
     /* 恢复按钮 + 清并发锁。无论 refreshAll 内部是否抛错都执行 */
     _refreshing = false;
-    if(_rBtn){ _rBtn.disabled = false; _rBtn.textContent = _rBtnTxt || '刷新'; }
+    if(_rBtn){ _rBtn.disabled = false; _rBtn.innerHTML = _rBtnHtml || '<svg viewBox="0 0 24 24" style="width:16px;height:16px;fill:currentColor"><path d="M17.65 6.35C16.2 4.9 14.21 4 12 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08c-.82 2.33-3.04 4-5.65 4-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"/></svg>'; }
     applyAllCardFold();
   }
 }
@@ -1382,7 +1392,7 @@ function stockBatchRowHtml(s){
   var info = s.code ? stockInfo[s.code] : null;
   var name = info && info.name ? info.name : (s.code ? '（保存后加载）' : '');
   var mv = (info && info.price && s.shares) ? fmtNum(s.shares * info.price) : '--';
-  return '<td><input class="code-in" data-f="code" maxlength="12" value="' + (s.code || '') + '" placeholder="代码(如 600519 / hk00700 / AAPL)"></td>'
+  return '<td><input class="code-in" data-f="code" maxlength="12" value="' + (s.code || '') + '" placeholder="代码(如 600519 / hk00700 / 920799 / AAPL)"></td>'
        + '<td style="text-align:left" class="muted">' + escHtml(name) + '</td>'
        + '<td><input data-f="shares" type="number" step="1" value="' + (s.shares || '') + '" placeholder="必填"></td>'
        + '<td><input data-f="cost" type="number" step="0.001" value="' + (s.cost || '') + '" placeholder="选填"></td>'
@@ -1497,7 +1507,7 @@ function saveStockBatch(){
     var raw = get('code');
     if(!raw){ continue; } /* 空行跳过 */
     var code = normStockCode(raw);
-    if(!code){ alert('第 ' + (i+1) + ' 行代码「' + raw + '」无效（A股6位 / 港股 hk00000 / 美股 AAPL）'); return; }
+    if(!code){ alert('第 ' + (i+1) + ' 行代码「' + raw + '」无效（A股6位 / 港股 hk00000 / 北交所 920799 / 美股 AAPL）'); return; }
     if(seen[code]){ alert('代码 ' + code + ' 重复了，请合并为一行'); return; }
     seen[code] = true;
     var shares = parseFloat(get('shares'));
@@ -1522,6 +1532,18 @@ var stocks = (function(){
   return [];
 })();
 function saveStocks(){ try{ localStorage.setItem(STK_KEY, JSON.stringify(stocks)); }catch(e){ console.error('[ext] saveStocks 失败:', e && e.message || e); toast('股票保存失败：存储已满或隐私模式'); } }
+/* v1.0.9 启动迁移：北交所旧代码 bj8xxxxx / bj43xxxx -> bj920xxx（后三位保留）。
+   北交所 2025-10-09 起全部切换为 920 号段，旧 8xx/43xx 已停更，必须迁移到 920 才能取到实时行情。 */
+(function(){
+  var changed = false;
+  stocks.forEach(function(s){
+    if(s && s.code && /^bj(?:8\d{5}|43\d{4})$/.test(s.code)){
+      s.code = 'bj920' + s.code.slice(-3);
+      changed = true;
+    }
+  });
+  if(changed){ try{ saveStocks(); }catch(e){} }
+})();
 var stockInfo = {}; /* code -> {name, price, prevClose, pct} */
 
 /* 规范股票/场内基金代码：自动补 sh/sz 前缀。支持 ETF/LOF/可转债/REITs 等场内品种
@@ -1529,18 +1551,33 @@ var stockInfo = {}; /* code -> {name, price, prevClose, pct} */
      沪市 sh：6 股票 / 5 基金(ETF·LOF·REITs) / 9 B股 / 11 可转债
      深市 sz：0/3 股票(含创业板) / 2 B股 / 12 可转债 / 15 ETF / 16 LOF / 18 REITs / 10 国债(兜底) */
 /* 规范化为腾讯行情代码（与 fetchTencent 直接喂的格式一致）。
-   A股: sh/sz + 6位；港股: hk + 5位（00700.HK / hk00700）；美股: us + 字母（AAPL / AAPL.US / BRK.B / usBRK.B）。
-   港股必须带 .HK 或 hk 前缀，避免与 A 股数字混淆；美股按字母识别（带点如 BRK.B 视为同一只）。 */
+   A股: sh/sz + 6位；港股: hk + 5位（00700.HK / hk00700）；美股: us + 字母（AAPL / AAPL.US / BRK.B / usBRK.B）；北交所: bj + 6位（bj920799 / 920799）。
+   港股必须带 .HK 或 hk 前缀，避免与 A 股数字混淆；美股按字母识别（带点如 BRK.B 视为同一只）；
+   北交所现行代码仅 920 开头（2025-10-09 起全部切换完成）；旧 8xx / 43xx 号段已停更，输入或历史持仓会自动迁移到 920 新号段（后三位保留），绝不落库为冻结代码。 */
 function normStockCode(v){
   v = (v || '').trim().toLowerCase();
   var m;
   if((m = v.match(/^(?:hk)?(\d{4,5})\.hk$/)))   return 'hk' + m[1].replace(/^0+/, '').padStart(5, '0'); // 00700.HK
   if((m = v.match(/^hk(\d{4,5})$/)))            return 'hk' + m[1].replace(/^0+/, '').padStart(5, '0'); // 已规范 hk00700
+  if((m = v.match(/^(?:bj)?(\d{6})\.bj$/))){   // 920799.BJ
+    var _cb = m[1];
+    if(/^920\d{3}$/.test(_cb)) return 'bj' + _cb;                    // 现行 920 号段
+    if(/^(?:8[2387]|43)\d{4}$/.test(_cb)) return 'bj920' + _cb.slice(3); // 旧号段迁移到 920（后三位保留）
+    return 'bj' + _cb;
+  }
+  if((m = v.match(/^bj(\d{6})$/))){             // 已规范 bj920799 / bj830799(旧)
+    var _cj = m[1];
+    if(/^920\d{3}$/.test(_cj)) return 'bj' + _cj;                    // 现行 920 号段
+    if(/^(?:8[2387]|43)\d{4}$/.test(_cj)) return 'bj920' + _cj.slice(3); // 旧号段迁移到 920（后三位保留）
+    return 'bj' + _cj;
+  }
   if((m = v.match(/^(?:us)?([a-z]{1,6})(?:\.[a-z]{1,3})?\.us$/))) return 'us' + m[1].toUpperCase();     // AAPL.US
   if((m = v.match(/^us([a-z]{1,6})(?:\.[a-z]{1,3})?$/)))      return 'us' + m[1].toUpperCase();          // 已规范 usAAPL
   if((m = v.match(/^([a-z]{1,6})(?:\.[a-z]{1,3})?$/)))        return 'us' + m[1].toUpperCase();          // 纯字母 AAPL / BRK.B
   if(/^(sh|sz)\d{6}$/.test(v)) return v;
   if(/^\d{6}$/.test(v)){
+    if(/^920\d{3}$/.test(v)) return 'bj' + v;                   // 北交所现行 920 号段（唯一有效）
+    if(/^(?:8[2387]|43)\d{4}$/.test(v)) return 'bj920' + v.slice(3); // 旧 8xx/43xx 迁移到 920（后三位保留），已停更不落库
     var f2 = v.slice(0,2);
     if(v[0] === '6' || v[0] === '5' || v[0] === '9') return 'sh' + v;   // 沪市：股票 / 基金 / B股
     if(v[0] === '0' || v[0] === '3' || v[0] === '2') return 'sz' + v;   // 深市：股票 / 创业板 / B股
@@ -1559,7 +1596,8 @@ function classifyStockType(rawCode){
   if(!nc) return {cls:'other', label:'未知', exchName:''};
   if(/^hk/.test(nc)) return {cls:'hk', label:'港股', exchName:'港股'};
   if(/^us/.test(nc)) return {cls:'us', label:'美股', exchName:'美股'};
-  var c = nc.replace(/^(sh|sz|hk|us)/, '');
+  if(/^bj/.test(nc)) return {cls:'bj', label:'北交所', exchName:'北交所'};
+  var c = nc.replace(/^(sh|sz|hk|us|bj)/, '');
   var exch = nc.slice(0, 2);                                  // 'sh' | 'sz'
   var exchName = exch === 'sh' ? '沪市' : '深市';
   var f2 = c.slice(0,2), f3 = c.slice(0,3);
@@ -1616,7 +1654,7 @@ function renderStocks(){
     var _stkType = s.type || classifyStockType(s.code).cls;
     html += '<tr><td title="' + escHtml(_stkNm) + '">' + escHtml(_stkNm) + '</td>'
           + '<td>' + typeTag(_stkType) + '</td>'
-          + '<td>' + s.code.replace(/^(sh|sz|hk|us)/, '') + '</td>'
+          + '<td>' + s.code.replace(/^(sh|sz|hk|us|bj)/, '') + '</td>'
           + '<td>' + fmtNum(price) + '</td>'
           + '<td>' + fmtNum(mv) + '</td>'
           + '<td>' + (s.shares ? Number(s.shares).toLocaleString() : '--') + '</td>'
@@ -1637,7 +1675,7 @@ function renderStocks(){
           + '<td class="' + cls(totCum) + '">' + (totCum !== 0 ? fmtSigned(totCum) : '--') + '</td>'
           + '<td></td></tr>';
   }
-  $('#stockBody').innerHTML = html || '<tr><td colspan="11" class="muted" style="text-align:center;padding:20px">暂无股票持仓，点击右上角「添加持仓」</td></tr>';
+  $('#stockBody').innerHTML = html || '<tr><td colspan="11" class="muted" style="text-align:center;padding:20px">暂无股票持仓，点击顶部 <b>+</b> 按钮添加</td></tr>';
   /* 整段 section 显示控制：无任何股票持仓时连标题带表一起隐藏 */
   $('#stockSection').style.display = stocks.length ? '' : 'none';
   return {totalMv: totMv, totalPnl: totPnl, prevMv: totPrev, count: n, hasPnl: hasPnl, cum: totCum, totalCost: totCost, hasCost: hasCost,
@@ -1676,9 +1714,10 @@ function updateSummary(fRes, sRes){
     $('#cumPct').textContent = '--'; $('#cumPct').className = 'chip-val muted';
     $('#todayLabel').textContent = '今日盈亏（元）';
     $('#todayPnl').innerHTML = '<span class="big-red-main muted" style="font-size:30px;letter-spacing:2px">未持仓</span>';
-    $('#pnlTime').textContent = '点击右上角「添加持仓」开始使用';
+    $('#pnlTime').textContent = '点击顶部「+」按钮添加持仓';
     $('#pnlFund').textContent = '未持仓'; $('#pnlFund').className = 'val muted';
     $('#pnlStock').textContent = '未持仓'; $('#pnlStock').className = 'val muted';
+    var eg = $('#emptyGuide'); if(eg) eg.style.display = '';
     try{ chrome.runtime.sendMessage({type:'updateBadge', pnl: 0}); }catch(_){ /* SW 未运行也无妨 */ }
     return {combMv: 0, combPnl: 0, combPct: 0, hasPnl: false, combYtdPnl: 0, combYtdPrevMv: 0, combYtdPct: 0, yView: false};
   }
@@ -1703,6 +1742,7 @@ function updateSummary(fRes, sRes){
   if(sc) parts.push(sc + ' 只股票');
   $('#holdCnt').textContent = parts.length ? parts.join(' · ') : '暂无持仓';
   $('#navDate').textContent = yView ? ('昨日净值 ' + (fRes.latestNavDate || '')) : (fRes.latestNavDate ? ('最新净值 ' + fRes.latestNavDate) : '实时估算中');
+  var eg2 = $('#emptyGuide'); if(eg2) eg2.style.display = 'none';
 
   /* 3. 市值估算框：始终显示当前市值；盘中标注"实时估算"，收盘后标注"实际市值"
          combMv 现在是统一的"当前市值"（基金优先用 gsz，盘中是实时估算、盘后是确认净值；股票用现价）
@@ -1842,7 +1882,7 @@ function updateStkTypeHint(){
   var sel = $('#inStkType');
   if(!raw){ hint.className='stk-type-hint'; hint.innerHTML=''; if(sel) sel.dataset.touched=''; return; }
   var nc = normStockCode(raw);
-  if(!nc){ hint.className='stk-type-hint bad'; hint.innerHTML='⚠ 无法识别，请输入 A股6位 / 港股 00000.HK / 美股 AAPL'; if(sel) sel.dataset.touched=''; return; }
+  if(!nc){ hint.className='stk-type-hint bad'; hint.innerHTML='⚠ 无法识别，请输入 A股6位 / 港股 00000.HK / 北交所 920799(旧8xx自动转920) / 美股 AAPL'; if(sel) sel.dataset.touched=''; return; }
   var t = classifyStockType(nc);
   hint.className='stk-type-hint ok';
   hint.innerHTML='识别为：<b>' + t.label + '</b>（' + t.exchName + '）';
@@ -1850,7 +1890,7 @@ function updateStkTypeHint(){
 }
 /* 类型标签小胶囊（渲染表格用） */
 function typeTag(cls){
-  var map = {stock:'股票', etf:'ETF', lof:'LOF', reits:'REITs', bond:'可转债', fund:'基金', other:'其他', hk:'港股', us:'美股'};
+  var map = {stock:'股票', etf:'ETF', lof:'LOF', reits:'REITs', bond:'可转债', fund:'基金', other:'其他', hk:'港股', us:'美股', bj:'北交所'};
   return '<span class="tag tag-' + (cls || 'other') + '">' + (map[cls] || '其他') + '</span>';
 }
 function saveStock(){
@@ -1941,7 +1981,7 @@ function fetchFundExists(code){
 function probeStock(raw){
   return new Promise(function(resolve){
     var nc = normStockCode(raw);
-    var ks = (/^hk|^us/.test(nc || '')) ? [nc] : ['sh' + (raw || ''), 'sz' + (raw || '')];
+    var ks = (/^(hk|us|bj)/.test(nc || '')) ? [nc] : ['sh' + (raw || ''), 'sz' + (raw || '')];
     fetchTencent(ks).then(function(out){
       var hit = ks.filter(function(k){ return out[k]; })[0];
       resolve(hit ? {key: hit, name: out[hit].name || hit} : null);
@@ -1964,8 +2004,8 @@ function onAddCodeInput(){
   box.innerHTML = '<span class="ident-loading">识别中…</span>';
   $('#addFundFields').classList.remove('show');
   $('#addStkFields').classList.remove('show');
-  /* 港股 / 美股：腾讯直接探，跳过东财基金库（基金库只收 A 股基金） */
-  if(/^hk|^us/.test(nc)){
+  /* 港股 / 美股 / 北交所：腾讯直接探，跳过东财基金库（基金库只收 A 股基金） */
+  if(/^hk|^us|^bj/.test(nc)){
     probeStock(raw).then(function(stkRes){
       var stkKey = stkRes && stkRes.key ? stkRes.key : null;
       var stkName = stkRes && stkRes.name ? stkRes.name : null;
@@ -1977,7 +2017,8 @@ function onAddCodeInput(){
       }else{
         addState.status = 'none'; addState.kind = null;
         box.className = 'add-ident ident-bad';
-        box.innerHTML = '<span>未找到该'+(nc[0]==='h'?'港股':'美股')+'代码，请确认输入</span>';
+        var _kind = nc[0]==='h' ? '港股' : (nc[0]==='u' ? '美股' : '北交所');
+        box.innerHTML = '<span>未找到该'+_kind+'代码，请确认输入</span>';
       }
       setAddFields();
     }).catch(function(){
@@ -2067,7 +2108,7 @@ function closeAddModal(){
 }
 function saveAdd(){
   var code = ($('#inAddCode').value || '').trim();
-  if(!normStockCode(code)){ alert('请输入有效代码（A股6位 / 港股 00000.HK / 美股 AAPL）'); return; }
+  if(!normStockCode(code)){ alert('请输入有效代码（A股6位 / 港股 00000.HK / 北交所 920799 / 美股 AAPL）'); return; }
   if(addState.status === 'empty' || addState.status === 'none'){ alert('未能识别该代码，请检查后重试'); return; }
   if(addState.status === 'both' && !addState.kind){ alert('请选择「场外基金」或「场内交易」'); return; }
   if(addState.kind === 'fund'){

@@ -24,7 +24,7 @@
     --bg:#eef1f6; --panel:#ffffff; --panel2:#f6f8fc; --border:#d8dfea;
     --text:#1f2937; --muted:#647085; --red:#e03131; --green:#0d8a52;
     --blue:#2f6fe0; --teal:#0f766e; --gold:#c47e08;
-    --btn:#e4e9f1; --chart-bg:#ffffff; --chart-border:#d8dfea; --chart-axis:#9aa7ba;
+    --btn:#dde4ee; --chart-bg:#ffffff; --chart-border:#d8dfea; --chart-axis:#9aa7ba;
     --chart-split:#e6ebf2; --chart-line:#c2ccda;
     --up:#e03131; --down:#0d8a52;
     --row-hover:rgba(47,111,224,.07); --row-hover-bar:#2f6fe0; --row-hover-text:#0f1f3a;
@@ -39,16 +39,23 @@
   .up{color:var(--red);} .down{color:var(--green);} .muted{color:var(--muted);}
 
   /* ===== 顶栏 ===== */
-  .topbar{display:flex;align-items:center;gap:14px;padding:6px 4px 14px;}
+  .topbar{display:flex;align-items:center;gap:12px;padding:6px 4px 14px;}
   .topbar .dot{width:10px;height:10px;border-radius:50%;background:var(--blue);box-shadow:0 0 8px var(--blue);}
   .topbar h1{font-size:19px;font-weight:700;letter-spacing:1px;}
   .topbar .status{font-size:12px;color:var(--muted);border:1px solid var(--border);border-radius:4px;padding:2px 8px;}
   .topbar .spacer{flex:1;}
-  .btn{border:none;border-radius:6px;padding:7px 14px;font-size:13px;cursor:pointer;color:var(--text);background:var(--btn);transition:.15s;}
-  .btn:hover{filter:brightness(1.2);}
+  .btn{display:inline-flex;align-items:center;justify-content:center;min-height:32px;border:none;border-radius:6px;padding:7px 14px;font-size:13px;cursor:pointer;color:var(--text);background:var(--btn);transition:filter .15s,background .15s,transform .12s;}
+  .btn:hover{filter:brightness(1.15);transform:translateY(-1px);}
+  .btn:active{transform:translateY(0) scale(.97);}
+  .btn:focus-visible{outline:2px solid var(--blue);outline-offset:2px;}
   .btn.blue{background:var(--blue);color:#fff;} .btn.green{background:#15915c;color:#fff;} .btn.teal{background:#0f766e;color:#fff;} .btn.gold{background:var(--gold);color:#fff;}
   .btn[aria-disabled="true"]{opacity:.45;cursor:not-allowed;pointer-events:none;}
   .btn.ghost{background:transparent;border:1px solid var(--border);color:var(--muted);}
+  .btn-icon{display:inline-flex;align-items:center;justify-content:center;padding:0;width:32px;height:32px;}
+  .btn-icon svg{width:16px;height:16px;fill:currentColor;}
+  .topbar-sep{width:1px;height:20px;background:var(--border);margin:0 2px;flex:0 0 auto;}
+  .spin{animation:spin 1s linear infinite;}
+  @keyframes spin{to{transform:rotate(360deg);}}
 
   /* ===== 卡片通用 ===== */
   .card{background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:16px 18px;}
@@ -341,8 +348,11 @@
   /* ===== 桌面组件模式（?widget 打开）===== */
   body.widget-mode{ width:392px; min-width:0; max-width:392px; padding:8px 10px; overflow-y:auto; overflow-x:hidden; scrollbar-gutter:stable; }
   body.widget-mode .topbar{ position:sticky; top:0; z-index:10; padding:4px 0 8px; background:var(--bg); }
-  body.widget-mode .topbar .btn:not(.blue){ display:none; }
+  body.widget-mode .topbar .btn:not(.keep-widget){ display:none; }
+  body.widget-mode .topbar .topbar-sep{ display:none; }
   body.widget-mode .topbar h1{ font-size:16px; }
+  body.widget-mode .topbar .btn{ min-height:26px; padding:2px 8px; }
+  body.widget-mode .topbar .btn-icon{ width:26px; height:26px; padding:0; }
   body.widget-mode .sec-title:has(+ .idx-row),
   body.widget-mode .idx-row,
   body.widget-mode .row3,
@@ -519,16 +529,14 @@
   <h1>持仓实时盈亏看板</h1>
   <span class="status" id="mktStatus">加载中…</span>
   <span class="spacer"></span>
-  <button class="btn blue" data-act="refreshAll">刷新</button>
-  <button class="btn" data-act="openAddModal">+ 添加持仓</button>
-  <button class="btn" data-act="openBatch">批量编辑</button>
-  <button class="btn teal" data-act="exportData">导出</button>
-  <button class="btn teal" data-act="clickImportFile">导入</button>
-  <button class="btn blue" style="position:relative" data-act="openAlerts">提醒<span class="badge" id="alertBadge" style="display:none">0</span></button>
-  <a class="btn" href="https://beiyucloud.taoxinyuan.com" target="_blank" rel="noopener noreferrer" style="text-decoration:none;display:inline-block" title="查看使用说明与下载">官网</a>
+  <button class="btn btn-icon keep-widget" data-act="refreshAll" title="刷新" aria-label="刷新"><svg viewBox="0 0 24 24"><path d="M17.65 6.35C16.2 4.9 14.21 4 12 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08c-.82 2.33-3.04 4-5.65 4-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"/></svg></button>
+  <button class="btn blue btn-icon" data-act="openAddModal" title="添加持仓" aria-label="添加持仓"><svg viewBox="0 0 24 24"><path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/></svg></button>
+  <button class="btn btn-icon" data-act="openBatch" title="批量编辑（含导出 / 导入）" aria-label="批量编辑"><svg viewBox="0 0 24 24"><path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34a.9959.9959 0 0 0-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83c.39-.38 1.02-.38 1.41 0z"/></svg></button>
+  <button class="btn btn-icon keep-widget" style="position:relative" data-act="openAlerts" title="提醒" aria-label="提醒"><svg viewBox="0 0 24 24"><path d="M12 22c1.1 0 2-.9 2-2h-4c0 1.1.9 2 2 2zm6-6v-5c0-3.07-1.63-5.64-4.5-6.32V4c0-.83-.67-1.5-1.5-1.5s-1.5.67-1.5 1.5v.68C7.64 5.36 6 7.92 6 11v5l-2 2v1h16v-1l-2-2zm-2 1H8v-6c0-2.48 1.51-4.5 4-4.5s4 2.02 4 4.5v6z"/></svg><span class="badge" id="alertBadge" style="display:none">0</span></button>
+  <span class="topbar-sep" aria-hidden="true"></span>
+  <a class="btn ghost" href="https://beiyucloud.taoxinyuan.com" target="_blank" rel="noopener noreferrer" style="text-decoration:none" title="查看使用说明与下载">官网</a>
   <button class="btn gold" data-act="openDonate">☕ 打赏</button>
-  <button class="btn" id="themeToggle" data-act="toggleTheme" title="切换浅色 / 深色">🌙 深色</button>
-  <input type="file" id="importFile" accept=".json" style="display:none" data-evt="change" data-act="importData" data-args='["event"]'>
+  <button class="btn btn-icon" id="themeToggle" data-act="toggleTheme" title="切换浅色 / 深色" aria-label="切换主题"><svg viewBox="0 0 24 24"><path d="M12 3c-4.97 0-9 4.03-9 9s4.03 9 9 9 9-4.03 9-9c0-.46-.04-.92-.1-1.36a5.389 5.389 0 0 1-4.4 2.26 5.403 5.403 0 0 1-3.14-9.8c-.44-.06-.9-.1-1.36-.1z"/></svg></button>
 </div>
 
 <!-- 第一行：总览 -->
@@ -587,6 +595,16 @@
       <div class="ft-row ft-diff" id="ftDiff">跑赢 <span class="ftv">--</span><span class="muted ft-mix" id="ftMix"></span></div>
     </div>
   </div>
+</div>
+
+<!-- 空仓引导：基金+股票均无持仓时显示 -->
+<div id="emptyGuide" class="card" style="display:none;text-align:center;padding:32px 20px;margin-bottom:14px">
+  <div style="width:56px;height:56px;margin:0 auto 14px;border-radius:50%;background:var(--btn);display:flex;align-items:center;justify-content:center;color:var(--blue)">
+    <svg viewBox="0 0 24 24" style="width:28px;height:28px;fill:currentColor"><path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/></svg>
+  </div>
+  <div style="font-size:16px;font-weight:600;margin-bottom:6px;color:var(--text)">暂无持仓</div>
+  <div style="font-size:13px;color:var(--muted);line-height:1.6">点击顶部「+」按钮，添加你的第一只基金或股票</div>
+  <button class="btn blue" style="margin-top:16px" data-act="openAddModal">立即添加</button>
 </div>
 
 <!-- 第二行：指数 -->
@@ -652,7 +670,7 @@
 </div>
 
 <div class="footer">
-  <div>看板版本 v62（2026-08-30）· 数据通道：<span id="srcStatus">检测中…</span>（若有 ✗ 请刷新重试）· <a href="https://beiyucloud.taoxinyuan.com" target="_blank" rel="noopener noreferrer" style="color:var(--blue);text-decoration:none">持仓实时盈亏看板</a> · <a href="privacy.html" target="_blank" rel="noopener noreferrer" style="color:var(--blue);text-decoration:none">隐私政策</a></div>
+  <div>看板版本 v76（2026-09-04）· 数据通道：<span id="srcStatus">检测中…</span>（若有 ✗ 请刷新重试）· <a href="https://beiyucloud.taoxinyuan.com" target="_blank" rel="noopener noreferrer" style="color:var(--blue);text-decoration:none">持仓实时盈亏看板</a> · <a href="privacy.html" target="_blank" rel="noopener noreferrer" style="color:var(--blue);text-decoration:none">隐私政策</a></div>
   数据来源：新浪财经（盘中实时估算）· 天天基金移动端接口（净值/重仓股）· 腾讯行情（指数）· 东方财富（个股实时行情 / 涨跌家数 / 行业板块 / 国际金价）。<br>
   计算口径：填份额时 今日盈亏 = 份额 ×（估算净值 − 昨日净值）（盘中/盘后显示实时估算）；持有收益率 = 已结算市值 ÷（份额 × 成本价）− 1，净值未公布时沿用上一交易日确认净值、不随盘中估值跳动，净值公布后自动更新；未填份额时按「持有市值 × 估算涨幅」近似。<br>
   「实时估算」为新浪基于基金前十大重仓股/债券/ETF 的加权估算（分钟级）；「重仓估算」为本页按前十大重仓股实时行情的自建兜底估算。估算均基于上季持仓，与实际净值有偏差，仅供参考。<br>
@@ -698,12 +716,17 @@
       </table>
     </div>
     <div class="ops" style="display:flex;justify-content:space-between;">
-      <button class="btn ghost" data-act="batchAddRow">+ 加一行</button>
+      <span style="display:flex;gap:10px;">
+        <button class="btn ghost" data-act="batchAddRow">+ 加一行</button>
+        <button class="btn teal" data-act="exportData" title="导出全部持仓为 JSON 备份文件">导出</button>
+        <button class="btn teal" data-act="clickImportFile" title="从 JSON 备份文件导入持仓">导入</button>
+      </span>
       <span style="display:flex;gap:10px;">
         <button class="btn ghost" data-act="closeBatch">取消</button>
         <button class="btn blue" data-act="saveBatch">保存全部</button>
       </span>
     </div>
+    <input type="file" id="importFile" accept=".json" style="display:none" data-evt="change" data-act="importData" data-args='["event"]'>
   </div>
 </div>
 
@@ -861,10 +884,13 @@
 <div class="mask" id="maskIdxConfig">
   <div class="modal" style="width:440px;max-width:94vw;">
     <h3 style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">指数显示设置<span class="idx-count">已选 <b id="idxConfigCount">0</b> / 7</span></h3>
-    <div class="tip" style="margin-bottom:12px;">勾选想在首页看到的指数卡片，最多 7 个，不选时自动折叠此栏。</div>
+    <div class="tip" style="margin-bottom:12px;">勾选在首页展示的指数卡片，最多 7 个，全不选时自动折叠此栏。</div>
     <div class="idx-config-body" id="idxConfigBody"></div>
-    <div class="ops" style="justify-content:space-between;">
-      <button class="btn ghost" data-act="resetIdxConfig">恢复默认</button>
+    <div class="ops" style="justify-content:space-between;gap:8px;flex-wrap:wrap;">
+      <div style="display:flex;gap:8px;flex-wrap:wrap;">
+        <button class="btn ghost" data-act="resetIdxConfig">恢复默认</button>
+        <button class="btn ghost" data-act="selectNoneIdxConfig">全不选</button>
+      </div>
       <button class="btn ghost" data-act="closeIdxConfig">关闭</button>
     </div>
   </div>
@@ -890,13 +916,13 @@
 <!-- 打赏弹窗 -->
 <div class="mask" id="maskDonate">
   <div class="modal donate-modal">
-    <h3>☕ 请我喝杯咖啡</h3>
+    <h3>☕ 赚钱了请我喝杯咖啡哟~</h3>
     <div class="donate-thanks">感谢有您的支持，持仓盈亏看板才能一直保持更新，增加更多功能。</div>
     <div class="donate-qr-wrap" id="donateQrWrap">
       <img class="donate-qr" src="./donate.png" alt="" onerror="document.getElementById('donateQrWrap').classList.add('noimg');">
       <div class="donate-qr-fallback">☕</div>
     </div>
-    <div class="donate-channel">微信 · 扫一扫</div>
+    <div class="donate-channel">微信 · 扫一扫 · 可留言</div>
     <div class="ops" style="margin-top:18px;">
       <button class="btn gold" data-act="closeDonate">打赏好了</button>
       <button class="btn ghost" data-act="closeDonate" style="margin-left:8px;">下次一定</button>
