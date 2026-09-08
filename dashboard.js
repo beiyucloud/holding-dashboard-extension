@@ -80,6 +80,7 @@ function themeColors(){
   return {
     text: g('--text', '#dbe4f5'), muted: g('--muted', '#7c8aa5'),
     red: g('--red', '#f04545'), green: g('--green', '#23b573'),
+    blue: g('--blue', '#4dabf7'),
     chartBg: g('--chart-bg', '#182238'), chartBorder: g('--chart-border', '#1f2a44'),
     chartAxis: g('--chart-axis', '#2a3a5c'), chartSplit: g('--chart-split', '#1a2540')
   };
@@ -244,9 +245,27 @@ function escHtml(s){
 }
 
 /* ================= 持仓存储 ================= */
+/* v1.1.0 字段兼容：旧持仓补 realized(累计已实现盈亏) / tCount(操作次数)，缺省 0 */
+function normRealized(x){
+  if(x && typeof x === 'object'){
+    if(typeof x.realized !== 'number' || isNaN(x.realized)) x.realized = 0;
+    if(typeof x.tCount !== 'number' || isNaN(x.tCount)) x.tCount = 0;
+  }
+  return x;
+}
+/* v1.1.0 分笔（lot）：记录每笔加仓的「买入日期 + 份额 + 净值」，
+   赎回时按先进先出（FIFO）算持有天数，再按持有期分档取对应赎回费率。 */
+function normLots(h){
+  if(!h || typeof h !== 'object') return h;
+  if(!Array.isArray(h.lots)) h.lots = [];
+  /* 旧数据没有分笔：按当前份额补一条「日期未知」的分笔（赎回时会提示并按最长档估算） */
+  if(!h.lots.length && (h.shares || 0) > 0) h.lots = [{d: null, s: h.shares, p: h.cost || 0}];
+  return h;
+}
+function normHolding(x){ return normLots(normRealized(x)); }
 function loadHoldings(){
-  try{ var raw = localStorage.getItem(LS_KEY); if(raw !== null){ var h = JSON.parse(raw); if(Array.isArray(h)) return h; } }catch(e){}
-  try{ var oldRaw = localStorage.getItem('fund_board_holdings_v1'); if(oldRaw !== null){ var old = JSON.parse(oldRaw); if(Array.isArray(old)) return old; } }catch(e){}
+  try{ var raw = localStorage.getItem(LS_KEY); if(raw !== null){ var h = JSON.parse(raw); if(Array.isArray(h)) return h.map(normHolding); } }catch(e){}
+  try{ var oldRaw = localStorage.getItem('fund_board_holdings_v1'); if(oldRaw !== null){ var old = JSON.parse(oldRaw); if(Array.isArray(old)) return old.map(normHolding); } }catch(e){}
   return null;
 }
 function saveHoldings(){ try{ localStorage.setItem(LS_KEY, JSON.stringify(holdings)); }catch(e){ console.error('[ext] saveHoldings 失败:', e && e.message || e); toast('持仓保存失败：存储已满或隐私模式'); } }
@@ -304,6 +323,23 @@ function fetchLsjz(code){
       prevNav: prev ? parseFloat(prev.DWJZ) : null
     };
   });
+}
+
+/* 按指定日期查基金收盘净值（东财 F10 历史净值，带起止日期窗口）
+   用于基金加仓 / 减仓：价 = 该交易日收盘净值（用户录入的是日期 + 金额 / 份额）。
+   返回 {date, nav}；该日休市或净值未公布时返回 null，由调用方兜底。 */
+function fetchNavByDate(code, date){
+  var url = 'https://api.fund.eastmoney.com/f10/lsjz?fundCode=' + code
+          + '&pageIndex=1&pageSize=1&startDate=' + encodeURIComponent(date)
+          + '&endDate=' + encodeURIComponent(date) + '&_=' + Date.now();
+  return fetchJSON(url).then(function(j){
+    var list = j && j.Data && j.Data.LSJZList;
+    if(!list || !list.length) return null;
+    var r = list[0];
+    var nav = parseFloat(r.DWJZ);
+    if(isNaN(nav) || nav <= 0) return null;
+    return {date: r.FSRQ || date, nav: nav};
+  }).catch(function(e){ console.log('[ext] 按日期查净值失败:', e && e.message || e); return null; });
 }
 
 /* 个股历史日K（新浪，与沪深300 同一通道 CN_MarketDataService.getKLineData）
@@ -560,10 +596,10 @@ function closeIdxConfig(){ $('#maskIdxConfig').classList.remove('show'); }
 
 /* ================= 渲染：涨跌家数 =================
    口径说明：东财 ulist.np 的 f104/f105/f106 是按「证券所属交易所」全量统计，
-   而非该指数的成分股。所以传 1.000001(上证指数) 拿到的是整个沪市，
-   传 0.399001(深证成指) 拿到的是整个深市，传 0.899050(北证50) 拿到的是整个北交所。
-   三者相加 = 沪深京全市场（含 B 股），与东财 / 同花顺行情首页口径一致。 */
-var ZD_MKT = {'000001':'沪', '399001':'深', '899050':'京'};
+   而非该指数的成分股。传 1.000002(上证A指) = 沪市 A 股（不含沪 B），
+   传 0.399107(深证A指) = 深市 A 股（不含深 B），0.899050(北证50) = 整个北交所（无 B 股）。
+   三者相加 = 沪深京 A 股全市场（不含 B 股），实测比含B口径少约 60-90 只。 */
+var ZD_MKT = {'000002':'沪', '399107':'深', '899050':'京'};
 function renderZd(diff, src, host){
   var up = 0, down = 0, flat = 0;
   var parts = [];
@@ -589,33 +625,365 @@ function renderZdRaw(up, down, flat, src, host, parts){
   var time = pad(now.getHours()) + ':' + pad(now.getMinutes()) + ':' + pad(now.getSeconds());
   $('#zdSub').textContent = '上涨 ' + (up / tot * 100).toFixed(1) + '% · 下跌 ' + (down / tot * 100).toFixed(1) + '%'
     + ' · 更新 ' + time;
+  /* 市场情绪温度：按上涨占比分档（冰点<25% / 偏冷25-40 / 中性40-60 / 偏暖60-75 / 过热>75%），纯本地计算 */
+  var moodEl = $('#zdMood');
+  if(moodEl){
+    var pct = up / tot * 100, cls, txt;
+    if(pct >= 75){ cls = 't-hot'; txt = '过热'; }
+    else if(pct >= 60){ cls = 't-warm'; txt = '偏暖'; }
+    else if(pct >= 40){ cls = ''; txt = '中性'; }
+    else if(pct >= 25){ cls = 't-cool'; txt = '偏冷'; }
+    else{ cls = 't-ice'; txt = '冰点'; }
+    moodEl.className = 'mood-temp ' + cls;
+    moodEl.textContent = '情绪·' + txt + ' ' + pct.toFixed(0) + '%';
+  }
   var detail = '';
   if(parts && parts.length){
     detail = parts.join(' <span class="sub-dot">·</span> ')
-           + '　共 ' + (up + down + flat).toLocaleString() + ' 只（含B股）';
+           + '　共 ' + (up + down + flat).toLocaleString() + ' 只（A股）';
   }
-  detail += '<br><span class="muted">来源：东方财富'
-          + (src === 'sina' ? '（降级：新浪全市场）' : (host ? '（' + host.replace('https://','') + '）' : ''))
-          + '　各家口径可能差几十只（是否含北交所/B股/停牌股）</span>';
   var el = $('#zdDetail');
   if(el) el.innerHTML = detail;
 }
 
-/* ================= 渲染：板块 ================= */
-function renderBk(el, list){
-  var html = '';
-  list.forEach(function(b, i){
-    var pct = Number(b.f3);
-    html += '<div class="bk-item"><div><span class="rk">' + (i + 1) + '</span>' + escHtml(b.f14)
-          + '<span class="sub2">' + (b.f104 || 0) + '涨 / ' + (b.f105 || 0) + '跌</span></div>'
-          + '<span class="' + cls(pct) + '" style="font-weight:700">' + fmtPct(pct) + '</span></div>';
+/* ================= 涨停/跌停家数（市场情绪行） =================
+   数据源：东财 push2ex 涨停池/跌停池（问财 ztzt 同源），盘中实时、收盘后为当日终值。
+   - getTopicZTPool / getTopicDTPool，pagesize=500 一次取全，pool.length 即家数。
+   - 非交易日/当日无池：data 为空 → 显示 --（跌停 0 是有效信息，接口返回空池时 pool=[] → 显示 0）。
+   - 失败静默显示 --，不影响其他卡片。 */
+async function loadZtDt(){
+  var now = new Date();
+  var pad2 = function(x){ return String(x).padStart(2, '0'); };
+  var ymd = now.getFullYear() + pad2(now.getMonth() + 1) + pad2(now.getDate());
+  var ut = '7eea3edcaed734bea9cbfc24409ed989';
+  async function poolCnt(api, sort){
+    var url = 'https://push2ex.eastmoney.com/getTopic' + api + 'Pool?ut=' + ut
+      + '&dpt=wz.ztzt&Pageindex=0&pagesize=500&sort=' + encodeURIComponent(sort) + '&date=' + ymd;
+    try{
+      var j = await fetchJSON(url, 10000);
+      if(j && j.data && j.data.pool) return j.data.pool.length;
+      return null;
+    }catch(e){
+      /* SW 通道失败 → 页面直连兜底（rules.json id5/id6 已改写 Origin/Referer + 注入 ACAO，CSP 已放行该域） */
+      try{
+        var r = await fetch(url, {credentials:'omit'});
+        var j2 = await r.json();
+        if(j2 && j2.data && j2.data.pool) return j2.data.pool.length;
+      }catch(e2){}
+      return null;
+    }
+  }
+  var zt = await poolCnt('ZT', 'fbt:asc');
+  var dt = await poolCnt('DT', 'fund:asc');
+  var elZ = $('#ztCnt'), elD = $('#dtCnt');
+  if(elZ) elZ.textContent = (zt === null) ? '--' : String(zt);
+  if(elD) elD.textContent = (dt === null) ? '--' : String(dt);
+}
+
+/* ================= 大盘实时资金流向图（涨跌家数卡下半部） =================
+   数据源：push2 fflow/kline，klt=1 分时「累计净流入」，沪深两市 secid 前端相加。
+   - https://push2.eastmoney.com/api/qt/stock/fflow/kline/get?lmt=0&klt=1&secid={1.000001|0.399001}
+     &fields1=f1,f2,f3,f7&fields2=f51,f52,f53,f54,f55,f56&ut=b2884a393a59ad64002292a3e90d46a5
+   - klines 每条 "2026-09-08 09:31,主力,小单,中单,大单,超大单"（单位元，收盘后全天 240 条）。
+   - 口径校验：主力 = 大单 + 超大单；主力 + 中单 + 小单 ≈ 0（实测成立）。
+   - 5 线配色对齐东财 zjlx 页：主力玫粉 / 超大单暗红 / 大单正红 / 中单橙黄 / 小单浅蓝。
+   - 北交所资金量极小，沪深两市合计口径忽略（标题已注明）。 */
+var zdFlowChart = null;
+function zdFlowDispose(){
+  if(zdFlowChart){ try{ zdFlowChart.dispose(); }catch(e){} zdFlowChart = null; }
+}
+async function loadMarketFlow(){
+  var host = document.getElementById('zdFlow');
+  if(!host) return;
+  var mkUrl = function(secid){
+    return 'https://push2.eastmoney.com/api/qt/stock/fflow/kline/get?lmt=0&klt=1&secid=' + secid
+      + '&fields1=f1,f2,f3,f7&fields2=f51,f52,f53,f54,f55,f56&ut=b2884a393a59ad64002292a3e90d46a5';
+  };
+  function parseKlines(j){
+    var arr = (j && j.data && j.data.klines) || [];
+    return arr.map(function(s){
+      var p = s.split(',');
+      return {t: p[0].slice(-5), zl: +p[1] || 0, xd: +p[2] || 0, zd: +p[3] || 0, dd: +p[4] || 0, cdd: +p[5] || 0};
+    });
+  }
+  var rs = await Promise.all([
+    fetchJSON(mkUrl('1.000001'), 12000).catch(function(){ return null; }),
+    fetchJSON(mkUrl('0.399001'), 12000).catch(function(){ return null; })
+  ]);
+  var sh = parseKlines(rs[0]), sz = parseKlines(rs[1]);
+  if(!sh.length && !sz.length){
+    host.innerHTML = '<div class="muted" style="padding:14px 4px">资金流向图暂无数据（盘前/接口不可用）</div>';
+    return;
+  }
+  /* 按分钟时间对齐相加（两市长度应一致 240 条；以沪市为基准，深市缺的分钟跳过） */
+  var map = {};
+  sz.forEach(function(r){ map[r.t] = r; });
+  var rows = [];
+  sh.forEach(function(r){
+    var o = map[r.t];
+    rows.push(o ? {t: r.t, zl: r.zl + o.zl, xd: r.xd + o.xd, zd: r.zd + o.zd, dd: r.dd + o.dd, cdd: r.cdd + o.cdd} : r);
   });
-  $(el).innerHTML = html || '<div class="muted" style="padding:10px 4px">暂无数据</div>';
+  if(!rows.length) rows = sz;
+  renderMarketFlow(rows);
+}
+function renderMarketFlow(rows){
+  var host = document.getElementById('zdFlow');
+  if(!host || !rows.length) return;
+  zdFlowDispose();
+  if(!window.echarts){ host.innerHTML = '<div class="muted" style="padding:14px 4px">图表组件未加载</div>'; return; }
+  host.innerHTML = '';
+  var TC = themeColors();
+  var Y = 1e8;
+  var times = rows.map(function(r){ return r.t; });
+  function mkLine(key, name, color){
+    return {name: name, type: 'line', showSymbol: false, lineStyle: {width: 1.4, color: color},
+      itemStyle: {color: color}, emphasis: {disabled: true},
+      data: rows.map(function(r){ return +(r[key] / Y).toFixed(2); })};
+  }
+  zdFlowChart = echarts.init(host, null, {renderer: 'canvas'});
+  zdFlowChart.setOption({
+    animation: false,
+    grid: {left: 46, right: 12, top: 10, bottom: 22},
+    tooltip: {trigger: 'axis', backgroundColor: TC.chartBg, borderColor: TC.chartBorder,
+      textStyle: {color: TC.text, fontSize: 11},
+      valueFormatter: function(v){ return (v === null || v === undefined) ? '--' : (Number(v) > 0 ? '+' : '') + Number(v).toFixed(2) + ' 亿'; }},
+    xAxis: {type: 'category', data: times, axisLine: {lineStyle: {color: TC.chartAxis}}, axisTick: {show: false},
+      axisLabel: {color: TC.muted, fontSize: 10, interval: Math.max(1, Math.floor(times.length / 5))}},
+    yAxis: {type: 'value', scale: true, splitLine: {lineStyle: {color: TC.chartSplit}}, axisLine: {show: false}, axisTick: {show: false},
+      axisLabel: {color: TC.muted, fontSize: 10, formatter: function(v){ return v + '亿'; }}},
+    series: [
+      mkLine('zl', '主力', '#f2569c'),
+      mkLine('cdd', '超大单', '#a02833'),
+      mkLine('dd', '大单', '#f03434'),
+      mkLine('zd', '中单', '#f5a623'),
+      mkLine('xd', '小单', '#a8c6f0')
+    ]
+  }, true);
+  if(!window.__zdFlowResizeBound){
+    window.__zdFlowResizeBound = true;
+    window.addEventListener('resize', function(){ if(zdFlowChart) zdFlowChart.resize(); });
+  }
+  /* 图例：5 线最新累计值（数值红正绿负，中国习惯；线色固定对齐东财） */
+  var elLg = document.getElementById('zdFlowLegend');
+  if(elLg){
+    var last = rows[rows.length - 1];
+    var items = [['zl', '主力', '#f2569c'], ['cdd', '超大单', '#a02833'], ['dd', '大单', '#f03434'], ['zd', '中单', '#f5a623'], ['xd', '小单', '#a8c6f0']];
+    elLg.innerHTML = items.map(function(it){
+      var v = last[it[0]] / Y;
+      var vCls = v > 0 ? 'up' : (v < 0 ? 'down' : 'muted');
+      return '<span class="flg"><i style="background:' + it[2] + '"></i>' + it[1]
+        + ' <b class="' + vCls + '">' + (v > 0 ? '+' : '') + v.toFixed(2) + '亿</b></span>';
+    }).join('');
+  }
+}
+
+/* ================= 渲染：板块资金流（单卡 · ECharts 柱状图 · 手动查看） ================= */
+/* 数据源：东财 dataapi/bkzj/getbkzj（hy.html 行业资金流同源），单位元。
+   周期字段：今日=f62，5日=f164，10日=f174（该接口一次只能取一个 key，见 loadBkCards）。
+   展示（对齐东财 el-tabs 板块资金流）：全量板块按净额降序从左到右；
+        净流入红柱向上、净流出绿柱向下，零轴由 ECharts 按数值自适应；
+        柱顶标数值（亿元，随柱色红/绿）、柱下竖排行业名（每字换行，避免旋转截断）。
+   ★ 不做自动滚动（v133，用户明确要求）：窗口停在「流入最强」的前 N 个板块，
+     需要看更后面的板块时，拖底部滑块或在图上滚轮/拖动即可。
+   ★ ECharts 不认 CSS 变量——颜色统一走 themeColors() 运行时读取，切主题后 refreshAll 会自动重绘。 */
+var bkChart = null;            /* ECharts 实例（每次重绘前 dispose，避免重复绑定与内存泄漏） */
+var BK_WIN = 32;               /* 一屏显示几个板块（窗口宽度，可拖滑块改变可视区间；对齐东财默认密度） */
+function bkDisposeChart(){
+  if(bkChart){ try{ bkChart.dispose(); }catch(e){} bkChart = null; }
+}
+function renderBkFlow(list, field, emptyText){
+  field = field || 'f62';
+  var host = document.getElementById('bkFlow');
+  if(!host) return;
+  bkDisposeChart();
+  if(!list || !list.length){
+    host.innerHTML = '<div class="muted" style="padding:14px 4px">' + (emptyText || '暂无数据') + '</div>';
+    return;
+  }
+  if(!window.echarts){
+    host.innerHTML = '<div class="muted" style="padding:14px 4px">图表组件未加载</div>';
+    return;
+  }
+  host.innerHTML = '';
+  var TC = themeColors();
+  var names = [], vals = [];
+  list.forEach(function(b){
+    names.push(b.f14 || '');
+    var yi = (Number(b[field]) || 0) / 1e8;                       /* 元 → 亿元 */
+    var c = yi > 0 ? TC.red : (yi < 0 ? TC.green : TC.muted);
+    vals.push({value: +yi.toFixed(2), itemStyle:{color:c}, label:{color:c, position: yi > 0 ? 'top' : 'bottom'}});
+  });
+  var n = names.length;
+  var win = Math.min(BK_WIN, n);
+  bkChart = echarts.init(host, null, {renderer:'canvas'});
+  bkChart.setOption({
+    animation: false,                                             /* 128 柱 + 窗口移动，开动画反而抖 */
+    grid:{left:54, right:16, top:14, bottom:118},
+    tooltip:{trigger:'axis', axisPointer:{type:'shadow'}, backgroundColor:TC.chartBg, borderColor:TC.chartBorder,
+      textStyle:{color:TC.text, fontSize:12},
+      valueFormatter:function(v){ return (v === null || v === undefined) ? '--' : (Number(v) > 0 ? '+' : '') + Number(v).toFixed(2) + ' 亿'; }},
+    xAxis:{type:'category', data:names, axisLine:{lineStyle:{color:TC.chartAxis}}, axisTick:{show:false},
+      axisLabel:{color:TC.text, fontSize:11, fontWeight:500, interval:0, hideOverlap:false, align:'center', verticalAlign:'top', lineHeight:14,
+        formatter:function(v){ return (v || '').split('').join('\n'); }}},
+    axisPointer:{label:{show:false}},
+    yAxis:{type:'value', scale:true, splitLine:{lineStyle:{color:TC.chartSplit}}, axisLine:{show:false}, axisTick:{show:false},
+      axisLabel:{color:TC.muted, fontSize:10, formatter:function(v){ return v.toFixed(2) + '亿'; }}},
+    dataZoom:[
+      {type:'inside', startValue:0, endValue:win - 1, zoomLock:true, zoomOnMouseWheel:false, moveOnMouseWheel:true, moveOnMouseMove:true},
+      {type:'slider', startValue:0, endValue:win - 1, zoomLock:true, height:24, bottom:8, showDetail:false, brushSelect:false,
+       borderColor:'#e0e0e0', backgroundColor:'#f5f5f5', fillerColor:'rgba(34,139,230,.24)',
+       handleStyle:{color:'#228be6', borderColor:'#228be6'}, handleSize:'120%', moveHandleSize:0,
+       dataBackground:{lineStyle:{color:'#d9d9d9'}, areaStyle:{color:'#d9d9d9', opacity:.3}},
+       selectedDataBackground:{lineStyle:{color:'#228be6'}, areaStyle:{color:'#228be6', opacity:.25}}}
+    ],
+    series:[{
+      type:'bar', data:vals, barMaxWidth:18,
+      label:{show:true, fontSize:9, lineHeight:11, formatter:function(p){ return p.value.toFixed(2) + '亿'; }},
+      markLine:{silent:true, symbol:'none', animation:false, label:{show:false},
+        lineStyle:{color:TC.chartAxis, width:1}, data:[{yAxis:0}]}
+    }]
+  }, true);
+  /* 不自动滚动：窗口默认停在前 N 个（流入最强）板块，用户可拖底部滑块或图上滚轮/拖动查看其余板块 */
+  if(!window.__bkResizeBound){
+    window.__bkResizeBound = true;
+    window.addEventListener('resize', function(){ if(bkChart) bkChart.resize(); });
+  }
+}
+
+/* ===== 板块资金流单卡：今日 / 5日 / 10日 周期选项卡 ===== */
+/* 单卡统一记忆选中周期；三周期数据各拉一次存缓存，切 tab 本地重排、零额外请求 */
+var BK_PERIOD_FIELD = {today:'f62', d5:'f164', d10:'f174'};
+var BK_PERIOD_LABEL = {today:'今日', d5:'5日', d10:'10日'};
+var bkPeriod = {bk:'today'};
+/* 板块类型：行业(hy)/概念(gn)/地域(dy)，各自独立拉取三周期数据缓存到 bkDataStore */
+var BK_TYPES = [
+  {key:'hy', label:'行业', code:'m:90+s:4'},
+  {key:'gn', label:'概念', code:'m:90+t:3'},
+  {key:'dy', label:'地域', code:'m:90+t:1'}
+];
+var bkSelType = 'hy';                   /* 当前选中板块类型（避免与 window.bkType 函数同名冲突） */
+var bkDataStore = {};
+BK_TYPES.forEach(function(t){ bkDataStore[t.key] = {today:null, d5:null, d10:null}; });
+function setBkTab(cardKey, period){
+  if(!BK_PERIOD_FIELD[period]) return;
+  bkPeriod.bk = period;                 /* 单卡：忽略传入的 cardKey，统一用 'bk' */
+  /* 高亮当前 tab（依赖按钮上的 data-bk-period 属性） */
+  var btns = document.querySelectorAll('[data-bk-tabs] .bk-tab');
+  for(var i = 0; i < btns.length; i++){
+    var p = btns[i].getAttribute('data-bk-period');
+    btns[i].className = 'bk-tab' + (p === period ? ' on' : '');
+  }
+  fillBkCard();
+}
+function bkType(typeKey){
+  if(!bkDataStore[typeKey]) return;
+  bkSelType = typeKey;
+  var btns = document.querySelectorAll('[data-bk-types] .bk-type');
+  for(var i = 0; i < btns.length; i++){
+    var k = btns[i].getAttribute('data-bk-type');
+    btns[i].className = 'bk-type' + (k === typeKey ? ' on' : '');
+  }
+  fillBkCard();
+}
+function fillBkCard(){
+  var period = bkPeriod.bk || 'today';
+  var store = bkDataStore[bkSelType] || {};
+  var data = period === 'd5' ? store.d5 : (period === 'd10' ? store.d10 : store.today);
+  if(!data || !data.length){
+    /* 如果该周期还没数据，自动补拉一次（用户切换 5日/10日 时常见），避免显示"暂无数据" */
+    var host = document.getElementById('bkFlow');
+    if(host) host.innerHTML = '<div class="muted" style="padding:14px 4px">正在加载 ' + (BK_PERIOD_LABEL[period] || period) + ' 数据…</div>';
+    loadBkPeriod(bkSelType, period).then(function(){ fillBkCard(); }).catch(function(){
+      var host2 = document.getElementById('bkFlow');
+      if(host2) host2.innerHTML = '<div class="muted" style="padding:14px 4px">' + (period === 'today' ? '今日暂无板块资金流（盘前/休市，可切 5日/10日）' : '暂无数据') + '</div>';
+    });
+    return;
+  }
+  var field = BK_PERIOD_FIELD[period] || 'f62';
+  /* 单卡全量板块，按净额降序：流入最多在顶 → 流出最多在底 */
+  var list = data.slice().sort(function(a, c){ return (Number(c[field]) || 0) - (Number(a[field]) || 0); });
+  var emptyText = period === 'today' ? '今日暂无板块资金流（盘前/休市，可切 5日/10日）' : '暂无数据';
+  renderBkFlow(list, field, emptyText);
+}
+
+/* ===== 板块资金流：按类型+周期补拉（单周期） ===== */
+var bkFetching = {};   /* key:type+period，防止并发重复请求 */
+async function loadBkPeriod(typeKey, period){
+  if(!bkDataStore[typeKey] || !BK_PERIOD_FIELD[period]) return;
+  var key = typeKey + '_' + period;
+  if(bkFetching[key]) return bkFetching[key];
+  var typeObj = null;
+  for(var i = 0; i < BK_TYPES.length; i++){ if(BK_TYPES[i].key === typeKey){ typeObj = BK_TYPES[i]; break; } }
+  if(!typeObj) return;
+  bkFetching[key] = fetchJSON('https://data.eastmoney.com/dataapi/bkzj/getbkzj?key=' + BK_PERIOD_FIELD[period] + '&code=' + encodeURIComponent(typeObj.code), 12000)
+    .then(function(r){
+      bkDataStore[typeKey][period] = (r && r.data && r.data.diff) || [];
+    }).catch(function(){
+      /* 失败不覆盖旧数据，保留空数组或已有数据 */
+    }).finally(function(){
+      bkFetching[key] = null;
+    });
+  return bkFetching[key];
+}
+
+/* ===== 板块资金流：拉取三周期全量并填充单卡 ===== */
+var bkRetryTimer = null;   /* 盘中「今日为空」自动补拉计时器（防呆：开着看板不点刷新，开盘后也能自愈） */
+async function loadBkCards(){
+  try{
+    /* ★ 数据源（v127 定稿）：东财「行业资金流」页面 data.eastmoney.com/bkzj/hy.html 同源
+         https://data.eastmoney.com/dataapi/bkzj/getbkzj?key=f62&code=m:90+s:4
+       - code=m:90+s:4 → 128 个细分子行业（电池/半导体/消费电子/化学制药/通信设备…），与页面表格一一对应，
+         金额即为页面那套大金额（实测电池 -19.05亿、通信设备 +39.43亿），不是 push2 的小金额快照版。
+       - key：f62=今日主力净额 / f164=5日 / f174=10日。接口一次只认一个 key，故并发 3 个请求。
+       - 返回纯 JSON（不支持 jsonp 的 cb 参数）。走 fetchJSON → getRemoteText → 后台 SW 代理（chrome.runtime
+         sendMessage xfetch），SW 带 host_permissions 发出，不受页面 CORS 限制。
+       - ⚠️ 只有 file:// 桌面版（无 SW，退化成页面直连）才会撞该域无 ACAO 头的 CORS 报错，
+         已在 rules.json 加 id=4 响应头注入兜底。
+       - 历史踩坑：v123 用 push2+m:90+t:2（496 混合板块）、v126 用 push2+m:90+s:2（31 个一级行业）
+         都是为了绕开「误以为 dataapi 被 CORS 拒绝」而做的降级，现已回到页面同源的 128 行业。 */
+    var bkzjBase = 'https://data.eastmoney.com/dataapi/bkzj/getbkzj';
+    var keys = ['f62','f164','f174'], periods = ['today','d5','d10'];
+    var tasks = [];
+    BK_TYPES.forEach(function(t){
+      keys.forEach(function(key, idx){
+        var period = periods[idx];
+        tasks.push(
+          fetchJSON(bkzjBase + '?key=' + key + '&code=' + encodeURIComponent(t.code), 12000)
+            .then(function(r){ bkDataStore[t.key][period] = (r && r.data && r.data.diff) || []; })
+            /* 失败不覆盖已有数据：保留旧值或空数组，避免 d5/d10 单点失败把整张表清空 */
+            .catch(function(){ if(!bkDataStore[t.key][period]) bkDataStore[t.key][period] = []; })
+        );
+      });
+    });
+    await Promise.all(tasks);
+    fillBkCard();
+    /* 自检：仅「行业」今日为空（盘前/开盘初）才排补拉；概念/地域不强制 */
+    var hyToday = bkDataStore.hy.today || [];
+    var anyToday = hyToday.some(function(b){ return Number(b.f62) || 0; });
+    if(anyToday){
+      if(bkRetryTimer){ clearTimeout(bkRetryTimer); bkRetryTimer = null; }   /* 今日已有值，取消待补拉 */
+    }else{
+      bkScheduleAutoRetry();   /* 接口通但今日 f62 全空（盘前/开盘初）→ 盘中定时补拉 */
+    }
+  }catch(e){ /* 网络失败不补拉：交给 refreshAll 下一轮自动刷新 */ }
+}
+function bkScheduleAutoRetry(){
+  if(bkRetryTimer) return;
+  if(!window.__fundIntraday) return;   /* 非 A 股交易时段（收盘/休市）不折腾 */
+  if((bkDataStore.hy.today||[]).some(function(b){ return Number(b.f62) || 0; })) return;
+  bkRetryTimer = setTimeout(function(){
+    bkRetryTimer = null;
+    loadBkCards().catch(function(){});
+  }, 45000);   /* 45s 后静默补拉一次；仍空则 loadBkCards 内再次 schedule */
 }
 
 /* ================= 卡片折叠（涨跌家数 / 领涨 / 领跌） ================= */
-var CARD_FOLD_KEY = 'fund_board_card_fold_v1';
-var CARD_FOLD_KEYS = ['zd','bkUp','bkDown'];
+// 注意：v2 起弃用 v1。v1 在 v107→v108→...→v114 反复折腾板块卡期间被冻结，
+// 残留了 v107 时期的 bkUp/bkDown 折叠态以及 v109 合并期引入的 bk 键，
+// 回滚 v107 后旧折叠态会误把 #bkUp/#bkDown 隐藏（用户报"不返回数据"）。
+// v3（v127）：两张板块卡（bkUp/bkDown）合并为单卡 bk，升 v3 重置折叠态，保证默认展开。
+var CARD_FOLD_KEY = 'fund_board_card_fold_v3';
+var CARD_FOLD_KEYS = ['zd','bk'];
 function loadCardFold(){
   try{
     var raw = localStorage.getItem(CARD_FOLD_KEY);
@@ -636,6 +1004,13 @@ function applyCardFold(key){
   var btn = document.querySelector('[data-act="toggleCard"][data-args*=\'"' + key + '"\']');
   if(body) body.style.display = collapsed ? 'none' : '';
   if(btn) btn.textContent = collapsed ? '展示' : '收起';
+  /* 展开后 ECharts 需重算尺寸：折叠时容器宽高为 0，不 resize 会画成空白/错位 */
+  if(!collapsed){
+    setTimeout(function(){
+      try{ if(chartInstance) chartInstance.resize(); }catch(e){}
+      try{ if(bkChart) bkChart.resize(); }catch(e){}
+    }, 0);
+  }
 }
 function applyAllCardFold(){
   CARD_FOLD_KEYS.forEach(function(k){ applyCardFold(k); });
@@ -649,7 +1024,7 @@ function toggleCard(key){
 
 /* ================= 渲染：持仓与汇总 ================= */
 function renderHoldings(){
-  var html = '', totalMv = 0, totalPnl = 0, totalCost = 0, hasCost = false, n = 0, anyTime = '', noGzCount = 0, holdEstCount = 0, closeEstCount = 0, navTime = '';
+  var html = '', totalMv = 0, totalPnl = 0, totalCost = 0, hasCost = false, n = 0, realizedAll = 0, anyTime = '', noGzCount = 0, holdEstCount = 0, closeEstCount = 0, navTime = '';
   var prevMv = 0, cumAll = 0, ytdPnl = 0, ytdPrevMv = 0;
   holdings.forEach(function(h){
     var info = fundInfo[h.code];
@@ -670,6 +1045,7 @@ function renderHoldings(){
     if(c.pnl !== null) totalPnl += c.pnl;
     if(c.prevMv !== null) prevMv += c.prevMv;
     if(c.cumPnl !== null){ totalCost += h.shares * h.cost; cumAll += c.cumPnl; hasCost = true; }
+    if(h.realized) realizedAll += h.realized;
     n++;
     /* 昨日盈亏：市值 × 昨日单日涨跌幅(NAVCHGRT，mobapi 返回的"最新交易日涨跌幅"即昨日)。
        非盘中时段顶部卡会显示"昨日盈亏"而不是空洞的"今日盈亏=0" */
@@ -704,7 +1080,8 @@ function renderHoldings(){
           + pctCell
           + '<td class="' + (c.cumPct !== null ? cls(c.cumPct) : 'muted') + '">' + (c.cumPct !== null ? fmtPct(c.cumPct) : '--') + '</td>'
           + '<td class="' + (c.cumPnl !== null ? cls(c.cumPnl) : 'muted') + '">' + (c.cumPnl !== null ? fmtSigned(c.cumPnl) : '--') + '</td>'
-          + `<td><span class="link" data-act="openModal" data-args='["${h.code}"]'>编辑</span><span class="link" style="color:var(--red)" data-act="delFund" data-args='["${h.code}"]'>删除</span></td></tr>`;
+          + '<td class="' + (h.realized ? cls(h.realized) : 'muted') + '">' + (h.realized ? fmtSigned(h.realized) : '--') + '</td>'
+          + `<td><span class="link" data-act="openTrade" data-args='["fund","${h.code}","add"]'>加仓</span><span class="link" data-act="openTrade" data-args='["fund","${h.code}","sell"]'>减仓</span><span class="link" data-act="openModal" data-args='["${h.code}"]'>编辑</span><span class="link" style="color:var(--red)" data-act="delFund" data-args='["${h.code}"]'>删除</span></td></tr>`;
   });
   var pctAll = prevMv > 0 ? totalPnl / prevMv * 100 : 0;
   var cumPctAll = (hasCost && totalCost > 0) ? (cumAll / totalCost) * 100 : null;
@@ -720,9 +1097,10 @@ function renderHoldings(){
           + '<td></td>'
           + '<td></td>'
           + '<td class="' + cumAllCls + '">' + (hasCost ? fmtSigned(cumAll) : '--') + '</td>'
+          + '<td class="' + (realizedAll > 0 ? 'up' : (realizedAll < 0 ? 'down' : 'muted')) + '">' + (realizedAll ? fmtSigned(realizedAll) : '--') + '</td>'
           + '<td></td></tr>';
   }
-  $('#holdBody').innerHTML = html || '<tr><td colspan="8" class="muted" style="text-align:center;padding:20px">暂无基金持仓，点击顶部 <b>+</b> 按钮添加</td></tr>';
+  $('#holdBody').innerHTML = html || '<tr><td colspan="9" class="muted" style="text-align:center;padding:20px">暂无基金持仓，点击顶部 <b>+</b> 按钮添加</td></tr>';
 
   /* 兼容 hasPnl 标志（原本是单独循环算的） */
   var hasPnl = false, latestNavDate = '';
@@ -738,7 +1116,7 @@ function renderHoldings(){
   return {
     totalMv: totalMv, totalPnl: totalPnl, prevMv: prevMv, pctAll: pctAll,
     fundCount: n, anyTime: anyTime, navTime: navTime, noGzCount: noGzCount, holdEstCount: holdEstCount, closeEstCount: closeEstCount,
-    hasPnl: hasPnl, hasCost: hasCost, totalCost: totalCost, cumAll: cumAll,
+    hasPnl: hasPnl, hasCost: hasCost, totalCost: totalCost, cumAll: cumAll, realizedAll: realizedAll,
     latestNavDate: latestNavDate,
     ytdPnl: ytdPnl, ytdPrevMv: ytdPrevMv, ytdPct: ytdPrevMv > 0 ? ytdPnl / ytdPrevMv * 100 : 0
   };
@@ -1198,7 +1576,7 @@ async function refreshAll(){
   for(var _hi=0; _hi<zdFallback.length && !zdOk; _hi++){
     try{
       var host = zdFallback[_hi];
-      var zd = await jsonp(host + '/api/qt/ulist.np/get', {fltt:2, invt:2, fields:'f12,f104,f105,f106', secids:'1.000001,0.399001,0.899050'});
+      var zd = await jsonp(host + '/api/qt/ulist.np/get', {fltt:2, invt:2, fields:'f12,f104,f105,f106', secids:'1.000002,0.399107,0.899050'});
       if(zd && zd.data && zd.data.diff && Object.keys(zd.data.diff).length){
         renderZd(zd.data.diff, 'eastmoney', host); markSrc('push2', true); zdOk = true;
       }
@@ -1220,13 +1598,21 @@ async function refreshAll(){
       }
     }catch(e2){}
   }
+  /* 3.5 涨停/跌停家数 + 情绪温度（独立源 push2ex，失败静默不影响主卡片） */
+  try{ loadZtDt(); }catch(e){}
+  /* 3.6 大盘实时资金流向图（沪深两市合计 5 线，失败静默不影响主卡片） */
+  try{ loadMarketFlow(); }catch(e){}
 
-  /* 4. 板块 TOP3 */
+  /* 4. 行业资金流（单卡 · 128 个细分子行业 · 今日/5日/10日 周期可切）
+     数据源：data.eastmoney.com/dataapi/bkzj/getbkzj?key={f62|f164|f174}&code=m:90+s:4，
+     与 data.eastmoney.com/bkzj/hy.html「行业资金流」页面同源同口径（实测电池 -19亿 / 通信设备 +39亿 量级）。
+     三周期各拉一次存缓存，切 tab 本地重排零额外请求；单卡按净额降序，双向条零轴居中。
+     实现见 loadBkCards()，内含「盘中今日为空 → 45s 自动补拉」自愈逻辑。
+     ⚠ 历史（勿回退）：v116/v122 push2+m:90+s:4 金额小一个量级；v123 push2+m:90+t:2 是 496 混合板块偏题；
+        v126 push2+m:90+s:2 只有 31 个一级行业太粗；v125 用 dataapi 是对的，但当时误判为 CORS 失败而放弃
+        ——实际 getRemoteText 走后台 SW 代理不受 CORS 限制，file:// 直连才会报错。v127 定稿为 dataapi+s:4。 */
   try{
-    var upBk = await jsonp('https://push2.eastmoney.com/api/qt/clist/get', {pn:1, pz:3, po:1, np:1, fltt:2, invt:2, fid:'f3', fs:'m:90+t:2+f:!50', fields:'f12,f14,f3,f104,f105'});
-    renderBk('#bkUp', (upBk.data && upBk.data.diff) || []);
-    var dnBk = await jsonp('https://push2.eastmoney.com/api/qt/clist/get', {pn:1, pz:3, po:0, np:1, fltt:2, invt:2, fid:'f3', fs:'m:90+t:2+f:!50', fields:'f12,f14,f3,f104,f105'});
-    renderBk('#bkDown', (dnBk.data && dnBk.data.diff) || []);
+    await loadBkCards();
   }catch(e){}
 
   /* 5. 近7日：沪深300 K线（新浪源，东财 push2his 不可用时兜底）+ 组合加权 */
@@ -1332,14 +1718,52 @@ function openModal(code){
   $('#inShares').value = h && h.shares ? h.shares : '';
   $('#inCost').value = h && h.cost ? h.cost : '';
   $('#inAmount').value = h && h.amount ? h.amount : '';
+  _renderRealizedRow(h);
   $('#mask').classList.add('show');
   if(!h) $('#inCode').focus();
+}
+/* 编辑弹窗里显示该持仓的「已实现盈亏 / 操作次数」（新增持仓时整行隐藏） */
+function _renderRealizedRow(h){
+  var row = $('#realizedRow'); if(!row) return;
+  if(!h){ row.style.display = 'none'; return; }
+  row.style.display = '';
+  var rv = $('#realizedVal'), tv = $('#tCountVal');
+  var r = h.realized || 0, t = h.tCount || 0;
+  if(rv){
+    rv.textContent = r ? (r > 0 ? '+' : '') + r.toFixed(2) + ' 元' : '0.00 元';
+    rv.className = 'val ' + (r > 0 ? 'up' : (r < 0 ? 'down' : ''));
+  }
+  if(tv) tv.textContent = t + ' 次';
+}
+/* 清零当前编辑基金的「已实现盈亏 / 操作次数」（清测试残留用；不动份额与成本价） */
+function clearRealized(){
+  if(!editingCode) return;
+  var h = holdings.find(function(x){ return x.code === editingCode; });
+  if(!h) return;
+  if(!(h.realized || 0) && !(h.tCount || 0)){ toast('本来就是 0，无需清零'); return; }
+  if(!confirm('把 ' + h.code + ' 的「已实现盈亏 ' + (h.realized || 0).toFixed(2) + ' 元 / 操作次数 '
+              + (h.tCount || 0) + ' 次」清零？\n（份额与成本价不变）')) return;
+  h.realized = 0; h.tCount = 0;
+  saveHoldings(); _renderRealizedRow(h); refreshAll();
+  toast('已清零 ' + h.code + ' 的已实现与操作次数');
+}
+/* 批量编辑里「清空已实现」：一键清掉所有基金 + 股票的 realized / tCount */
+function clearAllRealized(){
+  var f = holdings.filter(function(h){ return (h.realized || 0) || (h.tCount || 0); }).length;
+  var s = stocks.filter(function(x){ return (x.realized || 0) || (x.tCount || 0); }).length;
+  if(!f && !s){ toast('所有持仓的已实现与操作次数都已是 0'); return; }
+  if(!confirm('将把 ' + f + ' 只基金、' + s + ' 只股票/场内品种的「已实现盈亏 / 操作次数」全部清零。\n份额、成本价、分笔记录均不变。\n确定继续？')) return;
+  holdings.forEach(function(h){ h.realized = 0; h.tCount = 0; });
+  stocks.forEach(function(x){ x.realized = 0; x.tCount = 0; });
+  saveHoldings(); saveStocks(); refreshAll();
+  toast('已清空全部已实现盈亏与操作次数');
 }
 function closeModal(){
   $('#mask').classList.remove('show');
   $('#inCode').value=''; $('#inCode').disabled=false;
   $('#inName').value='';
   $('#inShares').value=''; $('#inCost').value=''; $('#inAmount').value='';
+  var _rr = $('#realizedRow'); if(_rr) _rr.style.display = 'none';
   editingCode = null;
 }
 function saveFund(){
@@ -1351,13 +1775,19 @@ function saveFund(){
   if(!/^\d{6}$/.test(code)){ alert('请输入 6 位基金代码'); return; }
   var hasShares = !isNaN(shares) && shares > 0;
   if(!hasShares && (isNaN(amount) || amount <= 0)){ alert('请填写「持有份额」或「持有市值」至少一项'); return; }
+  var oldH = holdings.find(function(h){ return h.code === code; });
   var entry = {
     code: code,
     name: name || undefined,
     shares: hasShares ? shares : null,
     cost: (hasShares && !isNaN(cost) && cost > 0) ? cost : null,
-    amount: (!isNaN(amount) && amount > 0) ? amount : null
+    amount: (!isNaN(amount) && amount > 0) ? amount : null,
+    realized: oldH ? (oldH.realized || 0) : 0,
+    tCount: oldH ? (oldH.tCount || 0) : 0
   };
+  /* 分笔同步：份额没变就沿用原分笔（保住买入日期）；份额被改动则无法还原明细 → 重建为「日期未知」的一笔（赎回时会提示复核） */
+  if(oldH && Array.isArray(oldH.lots) && oldH.lots.length && oldH.shares === entry.shares) entry.lots = oldH.lots;
+  else entry.lots = (hasShares ? [{d: null, s: shares, p: entry.cost || 0}] : []);
   var idx = -1;
   holdings.forEach(function(h, i){ if(h.code === code) idx = i; });
   if(editingCode){
@@ -1374,6 +1804,618 @@ function delFund(code){
   holdings = holdings.filter(function(h){ return h.code !== code; });
   delete fundInfo[code];
   saveHoldings(); refreshAll();
+}
+
+/* ================= 加仓 / 减仓（v1.1.0） =================
+   模型：移动加权平均 + 已实现/浮动拆分
+   - 加仓：新均价 = (旧份额×旧均价 + 加仓份额×加仓价 + 手续费) / 新份额；已实现不变
+   - 减仓：已实现 += (减仓价 − 旧均价) × 减仓份额 − 手续费；份额减少、均价不变；清仓均价置空
+   T+1 等交易规则不在此约束，仅忠实记录用户操作 */
+function _tradeFind(kind, code){
+  return kind === 'stock'
+    ? stocks.find(function(x){ return x.code === code; })
+    : holdings.find(function(x){ return x.code === code; });
+}
+function _tradeSave(kind){
+  if(kind === 'stock') saveStocks(); else saveHoldings();
+}
+function _applyAdd(h, shares, price, fee){
+  var oldShares = h.shares || 0, oldCost = h.cost || 0;
+  var newShares = oldShares + shares;
+  var newCost = (oldShares * oldCost + shares * price + (fee || 0)) / newShares;
+  h.shares = newShares;
+  h.cost = +newCost.toFixed(4);
+  h.tCount = (h.tCount || 0) + 1;
+}
+function _applySell(h, shares, price, fee){
+  var oldShares = h.shares || 0, oldCost = h.cost || 0;
+  if(shares > oldShares) return false; /* 减仓不得超持仓 */
+  h.realized = (h.realized || 0) + (price - oldCost) * shares - (fee || 0);
+  h.shares = oldShares - shares;
+  h.cost = (h.shares === 0) ? null : oldCost; /* 清仓均价置空；否则均价不变 */
+  h.tCount = (h.tCount || 0) + 1;
+  return true;
+}
+function addPosition(kind, code, shares, price, fee, date){
+  var h = _tradeFind(kind, code); if(!h) return;
+  _applyAdd(h, shares, price, fee);
+  if(kind === 'fund') _lotAdd(h, shares, price, date);   /* 记一笔买入日期，供赎回按持有期算费 */
+  _tradeSave(kind); refreshAll();
+}
+function sellPosition(kind, code, shares, price, fee){
+  var h = _tradeFind(kind, code); if(!h) return;
+  if(!_applySell(h, shares, price, fee)){ alert('减仓份额超过当前持仓'); return; }
+  if(kind === 'fund') _lotConsume(h, shares);            /* 先进先出销掉最早的分笔 */
+  _tradeSave(kind); refreshAll();
+}
+
+/* 交易弹窗（加仓/减仓共用，由 openTrade 设定方向） */
+/* ================= 基金费率（天天基金 f10 费率页） ================= */
+/* 为什么抓页面而不是调接口：
+   - fundmobapi 系列费率接口已被风控挡回 ErrCode 61136403「网络繁忙」（本机实测），不可用；
+   - fundf10 费率页（fundf10.eastmoney.com/jjfl_xxxxxx.html）可正常访问，且一页同时给出
+     「原费率 | 天天基金优惠费率」和「赎回费率（按持有期分档）」；
+   - 支付宝（蚂蚁财富）无公开费率接口（需登录态与签名），故统一以天天基金优惠费率为准——
+     它与支付宝同为一折价（实测 0.10%~0.15%），对支付宝用户基本适用。 */
+var fundRateKey = 'fund_board_fundrate_v2';  /* v2: 赎回档改 HOLD_MAX(1e15) 哨兵 + 带 label，v1 cache 里的 Infinity→null/无label 条目全废 */
+var RATE_TTL = 7 * 24 * 3600 * 1000;   /* 费率很少变，缓存 7 天 */
+var fundRateCache = {};                /* code -> {sub:[...], redeem:[...], ts} */
+try{ fundRateCache = JSON.parse(localStorage.getItem(fundRateKey)) || {}; }catch(e){ fundRateCache = {}; }
+function saveFundRateCache(){ try{ localStorage.setItem(fundRateKey, JSON.stringify(fundRateCache)); }catch(e){} }
+
+/* 金额区间文本 → {min,max}（元）。例："小于50万元"→{0,500000}、"大于等于50万元，小于100万元"→{500000,1000000} */
+function _parseAmtRange(txt){
+  var wan = function(s){ return parseFloat(String(s).replace(/,/g, '')) * 10000; };
+  var min = 0, max = Infinity, m;
+  if((m = txt.match(/大于等于\s*([\d.,]+)\s*万/))) min = wan(m[1]);
+  else if((m = txt.match(/大于\s*([\d.,]+)\s*万/))) min = wan(m[1]);
+  var mm;
+  if((mm = txt.match(/小于等于\s*([\d.,]+)\s*万/))) max = wan(mm[1]);
+  else if((mm = txt.match(/小于\s*([\d.,]+)\s*万/))) max = wan(mm[1]);
+  return {min: min, max: max};
+}
+/* 持有期限文本 → {min,max}（天，上界按"不含"处理；"小于等于N天" 视同 "小于N+1天"）
+   max 用 1e15 作"无上界"哨兵——Infinity 经 JSON.stringify 会变 null，从 cache 取回就废了 */
+var HOLD_MAX = 1e15;
+function _parseHoldRange(txt){
+  var min = 0, max = HOLD_MAX, m;
+  if((m = txt.match(/大于等于\s*(\d+)\s*天/))) min = parseInt(m[1], 10);
+  else if((m = txt.match(/大于\s*(\d+)\s*天/))) min = parseInt(m[1], 10) + 1;
+  else if((m = txt.match(/大于等于\s*(\d+)\s*个月/))) min = parseInt(m[1], 10) * 30;
+  else if((m = txt.match(/大于\s*(\d+)\s*个月/))) min = parseInt(m[1], 10) * 30 + 1;
+  else if((m = txt.match(/大于等于\s*(\d+)\s*年/))) min = parseInt(m[1], 10) * 365;
+  else if((m = txt.match(/大于\s*(\d+)\s*年/))) min = parseInt(m[1], 10) * 365 + 1;
+  var mm;
+  if((mm = txt.match(/小于等于\s*(\d+)\s*天/))) max = parseInt(mm[1], 10) + 1;
+  else if((mm = txt.match(/小于\s*(\d+)\s*天/))) max = parseInt(mm[1], 10);
+  else if((mm = txt.match(/小于等于\s*(\d+)\s*个月/))) max = parseInt(mm[1], 10) * 30 + 1;
+  else if((mm = txt.match(/小于\s*(\d+)\s*个月/))) max = parseInt(mm[1], 10) * 30;
+  else if((mm = txt.match(/小于等于\s*(\d+)\s*年/))) max = parseInt(mm[1], 10) * 365 + 1;
+  else if((mm = txt.match(/小于\s*(\d+)\s*年/))) max = parseInt(mm[1], 10) * 365;
+  return {min: min, max: max};
+}
+/* 解析费率页：申购档 [{min,max,rate,fixed}] + 赎回档 [{min,max,rate}] */
+function parseFundRate(html){
+  var out = {sub: [], redeem: []};
+  if(!html){ console.log('[ext] parseFundRate: empty html'); return out; }
+  function rows(anchor, len){
+    var i = html.indexOf(anchor);
+    if(i < 0) return [];
+    var tb = html.slice(i, i + len).match(/<tbody>([\s\S]*?)<\/tbody>/);
+    if(!tb) return [];
+    var rs = tb[1].match(/<tr>[\s\S]*?<\/tr>/g) || [];
+    return rs.map(function(r){
+      var tds = r.match(/<td[^>]*>([\s\S]*?)<\/td>/g) || [];
+      return tds.map(function(td){
+        return td.replace(/<[^>]+>/g, '').replace(/&nbsp;/g, ' ').replace(/\s+/g, ' ').trim();
+      });
+    });
+  }
+  /* 申购单元格形如 "<strike>1.00%</strike> | 0.10%"（前为原费率，后为天天基金优惠费率）；大额档可能是"每笔1000元" */
+  rows('申购费率', 3000).forEach(function(c){
+    if(c.length < 2) return;
+    var parts = c[1].split('|').map(function(s){ return s.trim(); });
+    var disc = parts.length > 1 ? parts[parts.length - 1] : parts[0];
+    var mf = disc.match(/每笔\s*([\d.,]+)\s*元/);
+    var mr = disc.match(/([\d.]+)\s*%/);
+    var rg = _parseAmtRange(c[0]);
+    if(!rg) return;
+    if(mf) out.sub.push({min: rg.min, max: rg.max, rate: 0, fixed: parseFloat(mf[1].replace(/,/g, ''))});
+    else if(mr) out.sub.push({min: rg.min, max: rg.max, rate: parseFloat(mr[1]) / 100, fixed: null});
+  });
+  /* 赎回单元格形如 "大于等于7天，小于365天" / "0.50%" */
+  rows('赎回费率', 2500).forEach(function(c){
+    if(c.length < 2) return;
+    var mr = c[1].match(/([\d.]+)\s*%/);
+    var rg = _parseHoldRange(c[0]);
+    if(mr && rg) out.redeem.push({min: rg.min, max: rg.max, rate: parseFloat(mr[1]) / 100, label: c[0]});
+  });
+  console.log('[ext] parseFundRate: sub=' + out.sub.length + ' redeem=' + out.redeem.length + ' htmlLen=' + html.length);
+  return out;
+}
+function pickSubRate(sub, amount){
+  if(!sub || !sub.length) return null;
+  for(var i = 0; i < sub.length; i++){
+    var t = sub[i];
+    if(amount >= t.min && amount < t.max) return t;
+  }
+  return sub[sub.length - 1];
+}
+function pickRedeemRate(redeem, days){
+  if(!redeem || !redeem.length) return null;
+  for(var i = 0; i < redeem.length; i++){
+    var t = redeem[i];
+    if(days >= t.min && days < t.max) return t.rate;
+  }
+  return redeem[redeem.length - 1].rate;
+}
+function fetchFundRate(code){
+  /* MV3 SW 抓 fundf10.eastmoney.com 会被 CORS 拦（页面无 Access-Control-Allow-Origin 头）；
+     改走扩展页直连（chrome-extension:// 是特权上下文，配 host_permissions 可绕过 CORS 直读）。
+     manifest 的 connect-src 已加 https://fundf10.eastmoney.com。 */
+  var url = 'https://fundf10.eastmoney.com/jjfl_' + code + '.html?_=' + Date.now();
+  console.log('[ext] fetchFundRate (direct) start:', code);
+  var delays = [0, 600, 1200];
+  var lastErr = null;
+  function attempt(i){
+    if(i >= delays.length) return Promise.reject(lastErr || new Error('retry exhausted'));
+    if(delays[i] > 0){
+      return new Promise(function(r){ setTimeout(function(){ r(attempt(i+1)); }, delays[i]); });
+    }
+    return fetch(url, {
+      method: 'GET',
+      credentials: 'omit',
+      referrer: 'https://fund.eastmoney.com/',
+      referrerPolicy: 'unsafe-url'
+    }).then(function(r){
+      console.log('[ext] fetchFundRate direct status:', r.status);
+      if(r.status < 200 || r.status >= 400) throw new Error('http ' + r.status);
+      return r.text();
+    }).catch(function(e){ lastErr = e; return attempt(i+1); });
+  }
+  return attempt(0).then(function(html){
+    console.log('[ext] fetchFundRate got html:', code, 'len=' + (html && html.length), 'hasAnchor=' + (html && html.indexOf('申购费率') >= 0));
+    var r = parseFundRate(html);
+    /* 解析结果为空时不缓存（避免把失败/空表缓存 7 天） */
+    if(r && (r.sub && r.sub.length || r.redeem && r.redeem.length)){
+      r.ts = Date.now();
+      fundRateCache[code] = r;
+      saveFundRateCache();
+    } else {
+      console.log('[ext] fetchFundRate empty parse, skip cache:', code);
+    }
+    return r;
+  }).catch(function(e){ console.log('[ext] 基金费率获取失败:', code, e && e.message || e); return null; });
+}
+/* 取费率（带 7 天缓存）；命中缓存或联网拿到都会回调 cb */
+function ensureFundRate(code, cb){
+  var c = fundRateCache[code];
+  var hasData = c && ((c.sub && c.sub.length) || (c.redeem && c.redeem.length));
+  if(c && c.ts && hasData && (Date.now() - c.ts < RATE_TTL)){ 
+    console.log('[ext] ensureFundRate cache hit:', code);
+    if(cb) cb(c); return Promise.resolve(c); 
+  }
+  console.log('[ext] ensureFundRate fetch:', code, 'cached=' + !!c, 'hasData=' + hasData);
+  return fetchFundRate(code).then(function(r){ if(cb) cb(r || null); return r; });
+}
+
+/* ================= 分笔（lots） ================= */
+function _lotAdd(h, shares, price, date){
+  if(!Array.isArray(h.lots)) h.lots = [];
+  h.lots.push({d: date || null, s: shares, p: price || 0});
+}
+function _lotConsume(h, shares){
+  if(!Array.isArray(h.lots)) return;
+  var remain = shares;
+  for(var i = 0; i < h.lots.length && remain > 0; i++){
+    var take = Math.min(h.lots[i].s || 0, remain);
+    h.lots[i].s = (h.lots[i].s || 0) - take;
+    remain -= take;
+  }
+  h.lots = h.lots.filter(function(l){ return (l.s || 0) > 1e-8; });
+}
+function _daysBetween(a, b){
+  if(!a || !b) return null;
+  var d1 = new Date(a + 'T00:00:00'), d2 = new Date(b + 'T00:00:00');
+  if(isNaN(d1.getTime()) || isNaN(d2.getTime())) return null;
+  return Math.round((d2 - d1) / 86400000);
+}
+/* 赎回费按先进先出：每笔按其持有天数取对应赎回费率，逐笔累加。
+   取不到费率表 / 该笔买入日期未知 → 退到最长持有档（通常 0%）并置 warn 提示复核（手续费仍可手改）。 */
+function _redeemFee(h, shares, nav, tradeDate, redeem){
+  var r = {fee: 0, warn: false, rate: null, days: null};
+  if(!Array.isArray(h.lots) || !h.lots.length){ r.warn = true; return r; }
+  var remain = shares, weighted = 0, total = 0;
+  for(var i = 0; i < h.lots.length && remain > 0; i++){
+    var lot = h.lots[i];
+    var take = Math.min(lot.s || 0, remain);
+    if(take <= 0) continue;
+    var rate = null, days = null;
+    if(redeem && redeem.length && lot.d){
+      days = _daysBetween(lot.d, tradeDate);
+      if(days !== null) rate = pickRedeemRate(redeem, days);
+    }
+    if(rate === null || rate === undefined){
+      rate = (redeem && redeem.length) ? redeem[redeem.length - 1].rate : 0;
+      r.warn = true;
+    }
+    r.fee += take * nav * rate;
+    weighted += rate * take; total += take;
+    if(r.days === null && days !== null) r.days = days;
+    remain -= take;
+  }
+  r.rate = total > 0 ? (weighted / total) : null;
+  return r;
+}
+
+/* 交易弹窗（加仓 / 减仓共用，由 openTrade 设定方向与可见字段）
+   基金：价 = 该日收盘净值（联网查东财 F10 历史净值），用户录入「日期 + 金额(加仓) / 份额(减仓)」。
+   股票：成交价由用户自己决定，录入「份额 + 价格」。 */
+var tradeState = null; /* {kind, code, dir:'add'|'sell', nav, navSrc, rate, rateState, rateWarn} */
+var navFetchToken = 0; /* 切日期后丢弃过期请求结果，避免旧净值覆盖新净值 */
+function todayStr(){ var d = new Date(); return d.getFullYear() + '-' + ('0'+(d.getMonth()+1)).slice(-2) + '-' + ('0'+d.getDate()).slice(-2); }
+
+function openTrade(kind, code, dir){
+  var h = _tradeFind(kind, code); if(!h) return;
+  tradeState = {kind: kind, code: code, dir: dir, nav: null, navSrc: '', rate: null, rateState: 'loading', rateWarn: false, redeemTier: null};
+  var nm = (kind === 'stock'
+    ? (stockInfo[h.code] && stockInfo[h.code].name)
+    : (fundInfo[h.code] && fundInfo[h.code].name)) || h.code;
+  $('#tradeTitleText').textContent = (dir === 'add' ? '加仓 ' : '减仓 ') + nm;
+  $('#tradeCur').textContent = '当前份额 ' + (h.shares || 0) + ' · 当前均价 ' + (h.cost != null ? h.cost : '--');
+  $('#tradeShares').value = ''; $('#tradeAmount').value = ''; $('#tradePrice').value = ''; $('#tradeFee').value = '';
+
+  var isFund = (kind === 'fund');
+  /* 交易成本折叠面板：股票弹窗只显示 佣金/起收/印花税，基金弹窗只显示 申购费率 */
+  var cFold = $('#tradeCostFold');
+  if(cFold){
+    Array.prototype.forEach.call(cFold.querySelectorAll('[data-kind]'), function(el){
+      var show = (el.getAttribute('data-kind') === 'fund') ? isFund : !isFund;
+      el.style.display = show ? '' : 'none';
+    });
+  }
+  /* 可见字段：基金=日期 +(加仓金额 | 减仓份额)；股票=份额 + 价格 */
+  $('#tradeDateRow').style.display = isFund ? '' : 'none';
+  $('#tradeNavLabel').style.display = isFund ? '' : 'none';
+  $('#redeemTierRow').style.display = (isFund && dir === 'sell') ? '' : 'none';
+  $('#tradeAmountRow').style.display = (isFund && dir === 'add') ? '' : 'none';
+  /* tradeSharesRow: 基金加仓隐、其它全显；stock 用 tradePriceRow 控制价 */
+  $('#tradeSharesRow').style.display = (isFund && dir === 'add') ? 'none' : '';
+  $('#tradeSharesLabel').textContent = isFund
+    ? (dir === 'add' ? '加仓份额（份）' : '减仓份额（份）')
+    : (dir === 'add' ? '加仓份额（股）' : '减仓份额（股）');
+  $('#tradeShares').placeholder = isFund
+    ? (dir === 'sell' ? '本次最多可减仓 ' + (h.shares || 0) + ' 份' : '如 1000')
+    : (dir === 'add' ? '如 1000' : '如 1000');
+  /* 股票才需要价格、股票加仓隐价格？股票加仓成交价必填：保留显示。 */
+  $('#tradePriceRow').style.display = isFund ? 'none' : '';
+  $('#maskTrade').classList.add('show');
+
+  /* 范围提示：基金提示日期约束；股票空（约束走 #tradeShares.max） */
+  var rangeTip = $('#tradeRangeTip');
+  if(isFund){
+    rangeTip.style.display = '';
+    rangeTip.textContent = '请选择准确日期';
+    if(dir === 'sell'){
+      /* 减仓份额框的 max 属性实时绑定到持仓（浏览器原生校验 + 上下箭头步进） */
+      $('#tradeShares').max = (h.shares || 0);
+    }
+  } else {
+    rangeTip.style.display = 'none';
+    rangeTip.textContent = '';
+    if(dir === 'sell'){
+      $('#tradeShares').max = (h.shares || 0);
+    }
+  }
+  if(dir === 'add'){
+    $('#tradeShares').removeAttribute('max');
+  }
+
+  if(isFund){
+    /* 默认日期：最近一个已公布净值的交易日（基金 T 日晚 20:00 才公布 T 日 NAV，白天未公布则不可选"今天"）。
+       看板是事后录入，navDate 取自 fundInfo（refreshAll 时由 lsjz 同步写入）。 */
+    var lastNavDate = (fundInfo[h.code] && fundInfo[h.code].navDate) || '';
+    var defaultDate = lastNavDate || todayStr();
+    $('#tradeDate').value = defaultDate;
+    $('#tradeDate').max = defaultDate;            /* HTML5 原生约束：日期选择器禁用未来日期 */
+    tradeState.maxNavDate = defaultDate;          /* confirmTrade 校验用 */
+    var f = (dir === 'add') ? $('#tradeAmount') : $('#tradeShares');
+    if(f && f.focus) f.focus();
+    /* 费率（申购优惠费率 + 赎回分档）联网取一次并缓存，拿到后重算手续费 */
+    tradeState.rateState = 'loading';
+    _renderRedeemTiers();            /* 即使费率还没拿到，也先渲染空状态/加载提示 */
+    ensureFundRate(code, function(r){
+      if(!tradeState || tradeState.code !== code) return;
+      tradeState.rate = r;
+      tradeState.rateState = (r && r.sub && r.sub.length) ? 'ok' : 'fail';
+      _renderRedeemTiers();
+      calcTradeFee(); _renderFundNavLabel();
+    });
+    resolveFundNav();
+  } else {
+    if($('#tradeShares').focus) $('#tradeShares').focus();
+  }
+}
+function closeTrade(){ $('#maskTrade').classList.remove('show'); tradeState = null; }
+
+/* 按所选日期取基金收盘净值；取不到（休市 / 该日净值未公布）则用最新可用净值兜底并标注 */
+function resolveFundNav(){
+  if(!tradeState || tradeState.kind !== 'fund') return;
+  var date = $('#tradeDate').value;
+  if(!date) return;
+  var myToken = ++navFetchToken;
+  var info = fundInfo[tradeState.code] || {};
+  var fallback = info.gsz || info.dwjz || null;
+  tradeState.nav = null; tradeState.navSrc = '';
+  _renderFundNavLabel('正在查询 ' + date + ' 净值…');
+  fetchNavByDate(tradeState.code, date).then(function(r){
+    if(myToken !== navFetchToken || !tradeState || tradeState.kind !== 'fund') return; /* 过期结果丢弃 */
+    if(r && r.nav > 0){
+      tradeState.nav = r.nav;
+      tradeState.navSrc = (r.date === date) ? '净值 ' : '净值（' + (r.date || date) + '）';
+    } else if(fallback){
+      tradeState.nav = fallback;
+      tradeState.navSrc = '该日净值未公布 · 暂用最新净值 ';
+    }
+    $('#tradePrice').value = tradeState.nav ? tradeState.nav.toFixed(4) : '';
+    _renderFundNavLabel();
+    calcTradeFee();
+  });
+}
+/* 净值只读展示；加仓时顺带算出「约得份额」 */
+function _renderFundNavLabel(loading){
+  var lbl = $('#tradeNavLabel'); if(!lbl || !tradeState) return;
+  lbl.classList.remove('warn');
+  if(loading){ lbl.textContent = loading; return; }
+  if(!tradeState.nav){ lbl.textContent = '未获取到净值，请换一个交易日或稍后再试'; lbl.classList.add('warn'); return; }
+  var txt = (tradeState.navSrc || '净值 ') + tradeState.nav.toFixed(4);
+  var amt = parseFloat($('#tradeAmount').value);
+  if(tradeState.dir === 'add'){
+    /* 份额按「金额 − 手续费」算，与 confirmTrade 保持一致 */
+    var fee = parseFloat($('#tradeFee').value); if(isNaN(fee)) fee = 0;
+    var dr = null, fixedFee = null, rateLabel = '', rateWarn = false;
+    var t = (tradeState.rate && tradeState.rate.sub && !isNaN(amt)) ? pickSubRate(tradeState.rate.sub, amt) : null;
+    if(t){ dr = t.rate; fixedFee = t.fixed; }
+    if(!isNaN(amt) && amt > 0) txt += ' · 约得份额 ' + ((amt - fee) / tradeState.nav).toFixed(2);
+    if(tradeState.rateState === 'loading'){
+      rateLabel = ' · 正在获取天天基金费率…';
+    } else if(tradeState.rateState === 'fail'){
+      var defR = (Number(alerts.settings.fundRateW) || 0) / 10000;
+      rateLabel = ' · 加仓费率 ' + (defR * 100).toFixed(2) + '%（默认，可改）';
+      rateWarn = true;
+    } else if(t == null && tradeState.rateState === 'ok'){
+      /* 费率已拿到，但金额框为空/非数字，没法选档；给首档预览，避免默认 0.10% 被误当成解析结果 */
+      var first = (tradeState.rate && tradeState.rate.sub && tradeState.rate.sub[0]) || null;
+      if(first && first.fixed != null){
+        rateLabel = ' · 加仓费 ' + first.fixed.toFixed(2) + '元/笔起（请输入金额）';
+      } else if(first && first.rate != null){
+        rateLabel = ' · 加仓费率 ' + (first.rate * 100).toFixed(2) + '%起（请输入金额）';
+      } else {
+        var defR2 = (Number(alerts.settings.fundRateW) || 0) / 10000;
+        rateLabel = ' · 加仓费率 ' + (defR2 * 100).toFixed(2) + '%（默认，可改）';
+        rateWarn = true;
+      }
+    } else if(fixedFee != null){
+      rateLabel = ' · 加仓费 ' + fixedFee.toFixed(2) + '元/笔（天天基金优惠价）';
+    } else {
+      rateLabel = ' · 加仓费率 ' + ((dr != null ? dr : (Number(alerts.settings.fundRateW) || 0) / 10000) * 100).toFixed(2) + '%'
+                + (dr != null ? '（天天基金优惠价）' : '（默认，可改）');
+    }
+    txt += rateLabel;
+    if(rateWarn) lbl.classList.add('warn');
+  } else {
+    if(tradeState.redeemTier){
+      txt += ' · 减仓费率 ' + (tradeState.redeemTier.rate * 100).toFixed(2) + '%（' + tradeState.redeemTier.label + '档·手动覆盖）';
+    } else if(tradeState.redeemRate != null){
+      txt += ' · 减仓费率 ' + (tradeState.redeemRate * 100).toFixed(2) + '%'
+           + (tradeState.redeemDays != null ? '（持有约 ' + tradeState.redeemDays + ' 天）' : '');
+      if(tradeState.rateWarn) txt += ' · 部分买入日期未知，按最长持有档估算，请手动选档或复核';
+    }
+  }
+  if(tradeState.navSrc.indexOf('暂用最新净值') >= 0 || tradeState.rateWarn) lbl.classList.add('warn');
+  lbl.textContent = txt;
+}
+/* 减仓赎回档位 chips：让用户从天天基金解析到的赎回分档里手动选一档（覆盖 FIFO 估算） */
+function _renderRedeemTiers(){
+  var list = $('#redeemTierList'); if(!list) return;
+  list.innerHTML = '';
+  if(!tradeState || tradeState.kind !== 'fund' || tradeState.dir !== 'sell'){
+    $('#redeemTierRow').style.display = 'none';
+    return;
+  }
+  var redeem = (tradeState.rate && tradeState.rate.redeem) || [];
+  if(!redeem.length){
+    $('#redeemTierRow').style.display = 'none';
+    return;
+  }
+  $('#redeemTierRow').style.display = '';
+  /* 「按买入日期自动算」默认选项 */
+  var autoLbl = document.createElement('label'); autoLbl.className = 'redeem-tier';
+  var autoRb = document.createElement('input');
+  autoRb.type = 'radio'; autoRb.name = 'redeemTier'; autoRb.value = 'AUTO';
+  autoRb.checked = (tradeState.redeemTier == null);
+  autoLbl.appendChild(autoRb);
+  var autoSpan = document.createElement('span'); autoSpan.textContent = '按买入日期自动算';
+  autoLbl.appendChild(autoSpan);
+  autoLbl.title = '按每笔买入日期与减仓日期的差套对应档（FIFO）';
+  list.appendChild(autoLbl);
+  autoLbl.addEventListener('click', function(ev){
+    if(ev.target.tagName !== 'INPUT') autoRb.checked = true;
+    if(autoRb.checked){ tradeState.redeemTier = null; _setActiveRedeemTier(autoLbl); calcTradeFee(); _renderFundNavLabel(); }
+  });
+  if(autoRb.checked) autoLbl.classList.add('active');
+  /* 解析到的每一档 */
+  redeem.forEach(function(t, idx){
+    var lbl = document.createElement('label'); lbl.className = 'redeem-tier';
+    var rb = document.createElement('input');
+    rb.type = 'radio'; rb.name = 'redeemTier'; rb.value = String(idx);
+    rb.checked = (tradeState.redeemTier && tradeState.redeemTier.idx === idx);
+    lbl.appendChild(rb);
+    var sp = document.createElement('span');
+    sp.textContent = (t.label || _redeemTierLabel(t)) + ' ' + (t.rate * 100).toFixed(2) + '%';
+    lbl.appendChild(sp);
+    lbl.title = '该档费率 ' + (t.rate * 100).toFixed(2) + '%';
+    list.appendChild(lbl);
+    lbl.addEventListener('click', function(ev){
+      if(ev.target.tagName !== 'INPUT') rb.checked = true;
+      if(rb.checked){
+        tradeState.redeemTier = {idx: idx, rate: t.rate, label: t.label || _redeemTierLabel(t)};
+        _setActiveRedeemTier(lbl); calcTradeFee(); _renderFundNavLabel();
+      }
+    });
+    if(rb.checked) lbl.classList.add('active');
+  });
+}
+function _redeemTierLabel(t){
+  function fmtDays(d){
+    d = Number(d);
+    if(!isFinite(d)) return '∞';
+    if(d >= 365){ var y = d/365; return (y%1===0 ? y.toFixed(0) : y.toFixed(1)) + '年'; }
+    if(d >= 30) return Math.round(d/30) + '个月';
+    return d + '天';
+  }
+  /* 上界 ≥ HOLD_MAX (1e15) 视为无上界；同时兜底老 cache 里 Infinity→null 的情形 */
+  var noMax = (t.max == null) || t.max >= HOLD_MAX || !isFinite(Number(t.max));
+  if(t.min === 0 && noMax) return '任意持有期';
+  if(t.min === 0 && !noMax) return '<' + fmtDays(t.max);
+  if(noMax) return '≥' + fmtDays(t.min);
+  return fmtDays(t.min) + '~' + fmtDays(t.max);
+}
+function _setActiveRedeemTier(activeLbl){
+  var list = $('#redeemTierList'); if(!list) return;
+  Array.prototype.forEach.call(list.querySelectorAll('.redeem-tier'), function(l){
+    l.classList.toggle('active', l === activeLbl);
+  });
+}
+
+function confirmTrade(){
+  if(!tradeState) return;
+  var fee = parseFloat($('#tradeFee').value); if(isNaN(fee)) fee = 0;
+  if(fee < 0){ alert('手续费不能为负数'); return; }
+  if(tradeState.kind === 'fund'){
+    /* 看板事后按收盘净值记录，日期不能超过最新已公布净值日（HTML max 兜底 + JS 双保险） */
+    var _tdate = $('#tradeDate').value;
+    if(tradeState.maxNavDate && _tdate && _tdate > tradeState.maxNavDate){
+      alert('只能选已公布净值的交易日（最新可交易日 ' + tradeState.maxNavDate + '）。本看板只计算盈亏，不实现交易。');
+      return;
+    }
+    var nav = parseFloat($('#tradePrice').value);
+    if(isNaN(nav) || nav <= 0){ alert('未获取到该日期的基金净值，请换一个已公布净值的交易日，或稍后再试。'); return; }
+    if(tradeState.dir === 'add'){
+      /* 加仓：按金额。外扣法 —— 净申购金额 = 金额/(1+费率)，申购费用 = 金额 − 净申购金额，份额 = 净申购金额 / 当日净值。
+         这样喂给 _applyAdd(shares, nav, fee) 后，新增成本基数 = shares×nav + fee = 净申购金额 + 申购费用 = 实际付出金额。 */
+      var amt = parseFloat($('#tradeAmount').value);
+      if(isNaN(amt) || amt <= 0){ alert('请输入加仓金额'); return; }
+      if(amt < 10){ alert('加仓金额过低（天天基金起购 10 元，A 类常见；少数基金 100/1000 元），请确认金额'); return; }
+      if(fee >= amt){ alert('手续费不能超过加仓金额'); return; }
+      /* 份额由「净申购金额 = 金额 − 手续费」反推，这样即使手改了手续费，
+         喂给 _applyAdd 后仍有 shares×nav + fee = 实际付出金额，成本基数始终自洽。 */
+      var shares = (amt - fee) / nav;
+      if(!isFinite(shares) || shares <= 0){ alert('份额计算异常，请检查加仓金额与净值'); return; }
+      addPosition(tradeState.kind, tradeState.code, shares, nav, fee, $('#tradeDate').value);
+    } else {
+      var sh = parseFloat($('#tradeShares').value);
+      if(isNaN(sh) || sh <= 0){ alert('请输入减仓份额'); return; }
+      if(sh < 1){ alert('最小减仓份额 1 份（天天基金规则），请调整'); return; }
+      var _hs = _tradeFind(tradeState.kind, tradeState.code);
+      var _remain = (_hs && _hs.shares || 0) - sh;
+      if(_remain > 0 && _remain < 1){
+        alert('减仓后剩余 ' + _remain.toFixed(2) + ' 份，不足最低保留 1 份（清仓除外）');
+        return;
+      }
+      sellPosition(tradeState.kind, tradeState.code, sh, nav, fee);
+    }
+    closeTrade(); return;
+  }
+  var s = parseFloat($('#tradeShares').value);
+  var p = parseFloat($('#tradePrice').value);
+  if(isNaN(s) || s <= 0){ alert('请输入本次份额'); return; }
+  if(isNaN(p) || p <= 0){ alert('请输入本次价格'); return; }
+  /* A股/场内 交易单位软校验（提示 + 允许继续）：
+     A股股票与场内基金 100 股/份整数倍（1手）；可转债 10 张整数倍（1手）；
+     科创板(688)/北交所/港股/美股 不校验（规则各异或无序要求）。 */
+  var lotUnit = stockLotUnit(tradeState.code);
+  if(lotUnit && s % lotUnit !== 0){
+    var stkRem = 0;
+    if(tradeState.dir !== 'add'){
+      var stkH = _tradeFind('stock', tradeState.code);
+      stkRem = (stkH && stkH.shares || 0) - s;
+    }
+    if(tradeState.dir === 'add' || stkRem !== 0){
+      var lotHint = (lotUnit === 10) ? '10 张整数倍' : '100 股整数倍';
+      var ex = (lotUnit === 10) ? '10/20/50...' : '100/200/500...';
+      var msg = (tradeState.dir === 'add')
+        ? '加仓股数须为 ' + lotHint + '（1手，如 ' + ex + ' 股/份），当前 ' + s + ' 不符合 A 股/场内交易规则。\n（科创板/北交所/港美股可不受此限制）\n仍要按 ' + s + ' 记录吗？'
+        : '减仓股数须为 ' + lotHint + '，或一次性全部清仓。当前 ' + s + ' 会留下零股（剩余 ' + stkRem + '），不符合 A 股/场内交易规则。\n仍要按 ' + s + ' 记录吗？';
+      if(!confirm(msg)) return;
+    }
+  }
+  var fn = tradeState.dir === 'add' ? addPosition : sellPosition;
+  fn(tradeState.kind, tradeState.code, s, p, fee);
+  closeTrade();
+}
+/* 实时估算手续费并预填（可手改）
+   基金：加仓按「金额」用外扣法算申购费；减仓按「份额×净值」估算赎回费（赎回费与持有期有关，仅作估算）
+   股票：按「份额×价格」算佣金（卡起收值）+ 卖出印花税 */
+function calcTradeFee(){
+  /* 负数防护：HTML min 不是强制的，用户可能粘贴或绕过；统一把负值清空 */
+  ['#tradeAmount', '#tradeShares', '#tradePrice', '#tradeFee'].forEach(function(s){
+    var el = $(s); if(!el || !el.value) return;
+    if(parseFloat(el.value) < 0) el.value = '';
+  });
+  if(!tradeState) return;
+  var S = alerts.settings;
+  if(tradeState.kind === 'fund'){
+    var nav = parseFloat($('#tradePrice').value);
+    if(isNaN(nav) || nav <= 0) return; /* 净值还没取到，不预填 */
+    if(tradeState.dir === 'add'){
+      var amt = parseFloat($('#tradeAmount').value);
+      _renderFundNavLabel();            /* 顺带刷新「约得份额 / 费率」 */
+      if(isNaN(amt) || amt <= 0) return;
+      /* 优先用该基金真实的天天基金优惠申购费率（按金额选档），取不到才退回设置里的默认费率 */
+      var t = (tradeState.rate && tradeState.rate.sub) ? pickSubRate(tradeState.rate.sub, amt) : null;
+      var fee;
+      if(t && t.fixed != null){ fee = t.fixed; }               /* 大额档：每笔固定金额 */
+      else {
+        var r = (t && t.rate != null) ? t.rate : ((Number(S.fundRateW) || 0) / 10000);
+        fee = amt - amt / (1 + r);                             /* 外扣法申购费用 */
+      }
+      tradeState.rateWarn = false;
+      $('#tradeFee').value = fee > 0 ? fee.toFixed(2) : '0';
+    } else {
+      var sh = parseFloat($('#tradeShares').value);
+      if(isNaN(sh) || sh <= 0){ _renderFundNavLabel(); return; }
+      var h = _tradeFind(tradeState.kind, tradeState.code);
+      var rf;
+      if(tradeState.redeemTier){
+        /* 用户在弹窗里手动选了某档 → 按平价算赎回费，跳过 FIFO */
+        rf = {fee: sh * nav * tradeState.redeemTier.rate, rate: tradeState.redeemTier.rate, days: null, warn: false};
+      } else {
+        /* 默认：赎回费按先进先出逐笔算：每笔按其持有天数取对应赎回费率 */
+        rf = _redeemFee(h, sh, nav, $('#tradeDate').value, tradeState.rate && tradeState.rate.redeem);
+        if(!tradeState.rate || !tradeState.rate.redeem || !tradeState.rate.redeem.length){
+          /* 费率表还没拿到（或该基金无赎回费表）→ 先用设置里的默认费率粗估，费率回来后会重算 */
+          rf.fee = sh * nav * ((Number(S.fundRateW) || 0) / 10000);
+          rf.warn = false;
+        }
+      }
+      tradeState.rateWarn = rf.warn; tradeState.redeemRate = rf.rate; tradeState.redeemDays = rf.days;
+      $('#tradeFee').value = rf.fee > 0 ? rf.fee.toFixed(2) : '0';
+      _renderFundNavLabel();
+    }
+    return;
+  }
+  var shares = parseFloat($('#tradeShares').value);
+  var price = parseFloat($('#tradePrice').value);
+  if(isNaN(shares) || shares <= 0 || isNaN(price) || price <= 0) return; /* 份额/价格不全则不预填，保留用户手填 */
+  var commRate = (Number(S.commRateW) || 0) / 10000;   /* 万分之 → 小数 */
+  var minComm  = Number(S.minComm) || 0;               /* 最低佣金：免5账户填 0 */
+  var stampTax = (Number(S.stampTaxW) || 0) / 10000;   /* 卖出印花税（仅股票卖出） */
+  var notional2 = shares * price;
+  var comm = notional2 * commRate;
+  if(comm < minComm) comm = minComm;                   /* 卡最低佣金门槛；minComm=0 即免5 */
+  var fee2 = comm + (tradeState.dir === 'sell' ? notional2 * stampTax : 0);
+  $('#tradeFee').value = fee2 > 0 ? fee2.toFixed(2) : '0';
 }
 
 /* ================= 批量编辑 ================= */
@@ -1482,12 +2524,19 @@ function saveBatch(){
     if(!hasShares && (isNaN(amount) || amount <= 0)){
       alert('第 ' + (i+1) + ' 行（' + code + '）需填「持有份额」或「持有市值」至少一项'); return;
     }
-    next.push({
+    var oldH = holdings.find(function(h){ return h.code === code; });
+    var e = {
       code: code,
       shares: hasShares ? shares : null,
       cost: (hasShares && !isNaN(cost) && cost > 0) ? cost : null,
-      amount: (!isNaN(amount) && amount > 0) ? amount : null
-    });
+      amount: (!isNaN(amount) && amount > 0) ? amount : null,
+      realized: oldH ? (oldH.realized || 0) : 0,
+      tCount: oldH ? (oldH.tCount || 0) : 0
+    };
+    /* 分笔同步：份额没变就沿用原分笔（保住买入日期）；变了则重建为「日期未知」的一笔 */
+    if(oldH && Array.isArray(oldH.lots) && oldH.lots.length && oldH.shares === e.shares) e.lots = oldH.lots;
+    else e.lots = (hasShares ? [{d: null, s: shares, p: e.cost || 0}] : []);
+    next.push(e);
   }
   /* 清理已删除基金的缓存 */
   Object.keys(fundInfo).forEach(function(c){ if(!seen[c]) delete fundInfo[c]; });
@@ -1502,6 +2551,9 @@ function saveStockBatch(){
   var next = [], seen = {}, prevTypeMap = {};
   /* 索引历史 type（code→原 type），代码未变时沿用、变了或缺失则重分类 */
   stocks.forEach(function(s){ if(s.code && s.type) prevTypeMap[s.code] = s.type; });
+  /* v1.1.0：保留历史已实现盈亏（减仓落袋收益），避免批量编辑清空 */
+  var prevRealizedMap = {};
+  stocks.forEach(function(s){ if(s.code) prevRealizedMap[s.code] = {realized: s.realized || 0, tCount: s.tCount || 0}; });
   for(var i = 0; i < rows.length; i++){
     var get = function(f){ var el = rows[i].querySelector('input[data-f="' + f + '"]'); return el ? el.value.trim() : ''; };
     var raw = get('code');
@@ -1517,7 +2569,9 @@ function saveStockBatch(){
       code: code,
       shares: shares,
       cost: (!isNaN(cost) && cost > 0) ? cost : null,
-      type: prevTypeMap[code] || classifyStockType(code).cls   /* v48 补 type */
+      type: prevTypeMap[code] || classifyStockType(code).cls,   /* v48 补 type */
+      realized: prevRealizedMap[code] ? prevRealizedMap[code].realized : 0,
+      tCount: prevRealizedMap[code] ? prevRealizedMap[code].tCount : 0
     });
   }
   /* 清理已删除股票的缓存 */
@@ -1528,7 +2582,7 @@ function saveStockBatch(){
 /* ================= 股票持仓 ================= */
 var STK_KEY = 'fund_board_stocks_v1';
 var stocks = (function(){
-  try{ var s = JSON.parse(localStorage.getItem(STK_KEY)); if(Array.isArray(s)) return s; }catch(e){}
+  try{ var s = JSON.parse(localStorage.getItem(STK_KEY)); if(Array.isArray(s)) return s.map(normRealized); }catch(e){}
   return [];
 })();
 function saveStocks(){ try{ localStorage.setItem(STK_KEY, JSON.stringify(stocks)); }catch(e){ console.error('[ext] saveStocks 失败:', e && e.message || e); toast('股票保存失败：存储已满或隐私模式'); } }
@@ -1617,8 +2671,22 @@ function classifyStockType(rawCode){
   return {cls:'other', label:'其他', exchName:exchName};
 }
 
+/* 交易单位（股/份/张）软校验用：返回最小申报单位，null = 不校验。
+   A股股票/场内基金(ETF·LOF·REITs)：100 股/份 = 1 手；
+   可转债：10 张 = 1 手；
+   科创板(688/689)：200 起可按 1 股递增 → 不强制 100 整；
+   北交所：100 起可按 1 股递增 → 不强制；港股/美股：无手数限制 → 不校验。 */
+function stockLotUnit(code){
+  if(!code) return null;
+  if(/^(hk|us|bj)/.test(code)) return null;
+  if(/^sh(688|689)/.test(code)) return null;     /* 科创板 */
+  if(/^(sh11|sz12)/.test(code)) return 10;       /* 可转债 */
+  if(/^sh\d{6}$/.test(code) || /^sz\d{6}$/.test(code)) return 100;  /* A股股票 / 场内基金 */
+  return null;
+}
+
 function renderStocks(){
-  var html = '', totMv = 0, totPnl = 0, totPrev = 0, totCum = 0, totCost = 0, hasCost = false, hasPnl = false, n = 0, ytdPnl = 0, ytdPrevMv = 0;
+  var html = '', totMv = 0, totPnl = 0, totPrev = 0, totCum = 0, totCost = 0, totRealized = 0, hasCost = false, hasPnl = false, n = 0, ytdPnl = 0, ytdPrevMv = 0;
   stocks.forEach(function(s){
     var q = stockInfo[s.code];
     var price = q ? q.price : null, pct = q ? q.pct : null, prev = q ? q.prevClose : null;
@@ -1648,6 +2716,7 @@ function renderStocks(){
     if(prevMv !== null) totPrev += prevMv;
     if(cumPnl !== null) totCum += cumPnl;
     if(s.cost && s.shares){ totCost += s.shares * s.cost; hasCost = true; }
+    if(s.realized) totRealized += s.realized;
     var _stkNm = (q && q.name) ? q.name : '加载中…';
     /* v48 兜底：老数据 stocks 里可能没 type 字段（v47 之前的批量编辑保存会丢 type）。
        这里只用于渲染显示，不写回 storage；下次 saveStockBatch/saveStock 会被永久写入。 */
@@ -1663,7 +2732,8 @@ function renderStocks(){
           + '<td class="' + cls(pnl) + '">' + fmtSigned(pnl) + '</td>'
           + '<td class="' + (cumPct !== null ? cls(cumPct) : 'muted') + '">' + (cumPct !== null ? fmtPct(cumPct) : '--') + '</td>'
           + '<td class="' + (cumPnl !== null ? cls(cumPnl) : 'muted') + '">' + (cumPnl !== null ? fmtSigned(cumPnl) : '--') + '</td>'
-          + `<td><span class="link" data-act="openStockModal" data-args='["${s.code}"]'>编辑</span><span class="link" style="color:var(--red)" data-act="delStock" data-args='["${s.code}"]'>删除</span></td></tr>`;
+          + '<td class="' + (s.realized ? cls(s.realized) : 'muted') + '">' + (s.realized ? fmtSigned(s.realized) : '--') + '</td>'
+          + `<td><span class="link" data-act="openTrade" data-args='["stock","${s.code}","add"]'>加仓</span><span class="link" data-act="openTrade" data-args='["stock","${s.code}","sell"]'>减仓</span><span class="link" data-act="openStockModal" data-args='["${s.code}"]'>编辑</span><span class="link" style="color:var(--red)" data-act="delStock" data-args='["${s.code}"]'>删除</span></td></tr>`;
   });
   if(stocks.length){
     /* v47 合计：5 列市值在 totMv，8 列涨跌幅空（加总无意义），其余跟随新表头 */
@@ -1673,12 +2743,13 @@ function renderStocks(){
           + '<td class="' + cls(totPnl) + '">' + (hasPnl ? fmtSigned(totPnl) : '--') + '</td>'
           + '<td></td>'
           + '<td class="' + cls(totCum) + '">' + (totCum !== 0 ? fmtSigned(totCum) : '--') + '</td>'
+          + '<td class="' + (totRealized > 0 ? 'up' : (totRealized < 0 ? 'down' : 'muted')) + '">' + (totRealized ? fmtSigned(totRealized) : '--') + '</td>'
           + '<td></td></tr>';
   }
-  $('#stockBody').innerHTML = html || '<tr><td colspan="11" class="muted" style="text-align:center;padding:20px">暂无股票持仓，点击顶部 <b>+</b> 按钮添加</td></tr>';
+  $('#stockBody').innerHTML = html || '<tr><td colspan="12" class="muted" style="text-align:center;padding:20px">暂无股票持仓，点击顶部 <b>+</b> 按钮添加</td></tr>';
   /* 整段 section 显示控制：无任何股票持仓时连标题带表一起隐藏 */
   $('#stockSection').style.display = stocks.length ? '' : 'none';
-  return {totalMv: totMv, totalPnl: totPnl, prevMv: totPrev, count: n, hasPnl: hasPnl, cum: totCum, totalCost: totCost, hasCost: hasCost,
+  return {totalMv: totMv, totalPnl: totPnl, prevMv: totPrev, count: n, hasPnl: hasPnl, cum: totCum, totalCost: totCost, hasCost: hasCost, realized: totRealized,
     ytdPnl: ytdPnl, ytdPrevMv: ytdPrevMv, ytdPct: ytdPrevMv > 0 ? ytdPnl / ytdPrevMv * 100 : 0};
 }
 
@@ -1712,6 +2783,7 @@ function updateSummary(fRes, sRes){
     $('#cumChip').style.background = ''; $('#cumChip').style.borderColor = '';
     $('#cumVal').textContent = '录入份额+成本价'; $('#cumVal').className = 'chip-val muted';
     $('#cumPct').textContent = '--'; $('#cumPct').className = 'chip-val muted';
+    $('#cumRealized').textContent = '--'; $('#cumRealized').className = 'chip-val muted';
     $('#todayLabel').textContent = '今日盈亏（元）';
     $('#todayPnl').innerHTML = '<span class="big-red-main muted" style="font-size:30px;letter-spacing:2px">未持仓</span>';
     $('#pnlTime').textContent = '点击顶部「+」按钮添加持仓';
@@ -1839,6 +2911,10 @@ function updateSummary(fRes, sRes){
     $('#cumPct').textContent = '--';
     $('#cumPct').className = 'chip-val muted';
   }
+  /* 已实现盈亏（落袋）：基金+股票合并，独立于 hasCost（无成本价也能记减仓收益） */
+  var combinedRealized = (fRes.realizedAll || 0) + (sRes.realized || 0);
+  $('#cumRealized').textContent = combinedRealized ? fmtSigned(combinedRealized, 0) : '--';
+  $('#cumRealized').className = 'chip-val ' + (combinedRealized > 0 ? 'up' : (combinedRealized < 0 ? 'down' : 'muted'));
   /* 6. 角标：把今日盈亏金额推给 service worker，让工具栏图标右上角显示
         盘前/周末（yView=true）时推送昨日盈亏（顶部卡也是这个口径，避免角标=0 看着像崩了）
         SW 端 bg.js 会负责按中国股市惯例上色（红涨绿跌）和格式化（k/w） */
@@ -1865,7 +2941,33 @@ function openStockModal(code){
   if(sel){ sel.value = (s && s.type) ? s.type : (s ? classifyStockType(s.code).cls : 'stock'); sel.dataset.touched = s ? '1' : ''; }
   $('#maskStock').classList.add('show');
   if(!s){ $('#inStkCode').focus(); }
+  _renderStockRealizedRow(s);
   updateStkTypeHint();
+}
+/* 股票/场内品种编辑弹窗：显示「已实现盈亏 / 操作次数」（新增时整行隐藏） */
+function _renderStockRealizedRow(s){
+  var row = $('#realizedRowStk'); if(!row) return;
+  if(!s){ row.style.display = 'none'; return; }
+  row.style.display = '';
+  var rv = $('#realizedValStk'), tv = $('#tCountValStk');
+  var r = s.realized || 0, t = s.tCount || 0;
+  if(rv){
+    rv.textContent = r ? (r > 0 ? '+' : '') + r.toFixed(2) + ' 元' : '0.00 元';
+    rv.className = 'val ' + (r > 0 ? 'up' : (r < 0 ? 'down' : ''));
+  }
+  if(tv) tv.textContent = t + ' 次';
+}
+/* 清零当前编辑股票/场内品种的「已实现盈亏 / 操作次数」（不动持股数与成本价） */
+function clearRealizedStk(){
+  if(!editingStock) return;
+  var s = stocks.find(function(x){ return x.code === editingStock; });
+  if(!s) return;
+  if(!(s.realized || 0) && !(s.tCount || 0)){ toast('本来就是 0，无需清零'); return; }
+  if(!confirm('把 ' + s.code + ' 的「已实现盈亏 ' + (s.realized || 0).toFixed(2) + ' 元 / 操作次数 '
+              + (s.tCount || 0) + ' 次」清零？\n（持股数与成本价不变）')) return;
+  s.realized = 0; s.tCount = 0;
+  saveStocks(); _renderStockRealizedRow(s); refreshAll();
+  toast('已清零 ' + s.code + ' 的已实现与操作次数');
 }
 function closeStockModal(){
   $('#maskStock').classList.remove('show');
@@ -1873,6 +2975,7 @@ function closeStockModal(){
   $('#inStkShares').value=''; $('#inStkCost').value='';
   var sel = $('#inStkType'); if(sel){ sel.value='stock'; sel.dataset.touched=''; }
   var hint = $('#stkTypeHint'); if(hint){ hint.innerHTML=''; hint.className='stk-type-hint'; }
+  var _rrs = $('#realizedRowStk'); if(_rrs) _rrs.style.display = 'none';
   editingStock = null;
 }
 /* 输入代码实时识别品种，并更新类型下拉默认值（用户未手动改过时） */
@@ -1901,7 +3004,9 @@ function saveStock(){
   if(isNaN(shares) || shares <= 0){ alert('请输入有效的持仓数量'); return; }
   var sel = $('#inStkType');
   var type = (sel && sel.value) ? sel.value : classifyStockType(code).cls;
-  var entry = { code: code, shares: shares, cost: (!isNaN(cost) && cost > 0) ? cost : null, type: type };
+  var oldS = stocks.find(function(s){ return s.code === code; });
+  var entry = { code: code, shares: shares, cost: (!isNaN(cost) && cost > 0) ? cost : null, type: type,
+    realized: oldS ? (oldS.realized || 0) : 0, tCount: oldS ? (oldS.tCount || 0) : 0 };
   var idx = -1;
   stocks.forEach(function(s, i){ if(s.code === code) idx = i; });
   if(editingStock){
@@ -2144,9 +3249,19 @@ function saveAdd(){
 /* ================= 提醒功能 ================= */
 var ALERT_KEY = 'fund_board_alerts_v1';
 var alerts = (function(){
-  try{ var a = JSON.parse(localStorage.getItem(ALERT_KEY)); if(a && a.settings) return a; }catch(e){}
-  return {settings:{pct:3, overrides:{}, stockOverrides:{}, notice:true, stockNotice:true, sound:true, notify:false, autoMin:0, stockMuted:{}, fundMuted:{}},
-          log:[], seenNotice:{}, seenStockNotice:{}, fired:{}};
+  var defs = {pct:3, overrides:{}, stockOverrides:{}, notice:true, stockNotice:true, sound:true, notify:false, autoMin:0, stockMuted:{}, fundMuted:{},
+              commRateW:2.5, minComm:5, stampTaxW:5, fundRateW:10};  /* 交易成本：佣金费率/最低佣金/卖出印花税/基金申购费率，单位均为「万分之」与「元」 */
+  try{
+    var a = JSON.parse(localStorage.getItem(ALERT_KEY));
+    if(a && a.settings){
+      /* 老设置缺新字段时补默认值，避免升级后 fundRateW 等变成 undefined → 0 */
+      Object.keys(defs).forEach(function(k){
+        if(a.settings[k] === undefined) a.settings[k] = defs[k];
+      });
+      return a;
+    }
+  }catch(e){}
+  return {settings:defs, log:[], seenNotice:{}, seenStockNotice:{}, fired:{}};
 })();
 migrateAlertLog();   /* 启动即清理旧版本误存的时间戳记录（如 "71-11"） */
 function saveAlerts(){ try{ localStorage.setItem(ALERT_KEY, JSON.stringify(alerts)); }catch(e){ console.error('[ext] saveAlerts 失败:', e && e.message || e); toast('提醒设置保存失败：存储已满或隐私模式'); } }
@@ -2381,6 +3496,10 @@ function openAlerts(){
   $('#setStockNotice').checked = alerts.settings.stockNotice !== false;  /* 默认 true，老用户升级启用 */
   $('#setSound').checked = !!alerts.settings.sound;
   $('#setNotify').checked = !!alerts.settings.notify;
+  $('#setCommRateW').value = (alerts.settings.commRateW != null) ? alerts.settings.commRateW : 2.5;
+  $('#setMinComm').value = (alerts.settings.minComm != null) ? alerts.settings.minComm : 5;
+  $('#setStampTaxW').value = (alerts.settings.stampTaxW != null) ? alerts.settings.stampTaxW : 5;
+  $('#setFundRateW').value = (alerts.settings.fundRateW != null) ? alerts.settings.fundRateW : 10;
   /* 单基金/股票阈值列表（合并了原顶部"仅停提醒"芯片：每行可直接 × 停提醒 / 停后变"恢复"） */
   $('#cntFund').textContent = holdings.length;
   $('#cntStock').textContent = stocks.length;
@@ -2994,6 +4113,10 @@ function serializeAlertForm(){
     stockNotice: $('#setStockNotice').checked,
     sound: $('#setSound').checked,
     notify: $('#setNotify').checked,
+    commRateW: $('#setCommRateW').value,
+    minComm: $('#setMinComm').value,
+    stampTaxW: $('#setStampTaxW').value,
+    fundRateW: $('#setFundRateW').value,
     ov: ov,
     stkOv: stkOv
   });
@@ -3009,7 +4132,7 @@ function updatePctHint(){
   var el = $('#setPct'), note = $('#pctNote');
   if(!el || !note) return;
   var v = parseFloat(el.value);
-  if(!isNaN(v) && v < 2){ note.textContent = '偏低，持仓日内波动易触发噪音'; note.className = 'pct-note low'; }
+  if(!isNaN(v) && v < 2){ note.textContent = '阈值偏低，日内波动易触发噪音提醒'; note.className = 'pct-note low'; }
   else { note.textContent = ''; note.className = 'pct-note'; }
 }
 function updateNotifyState(){
@@ -3019,23 +4142,23 @@ function updateNotifyState(){
   if(typeof chrome !== 'undefined' && chrome.notifications && chrome.notifications.getPermissionLevel){
     try{
       chrome.notifications.getPermissionLevel(function(level){
-        if(level === 'granted'){ el.textContent = '（已授权）'; el.className = 'link ok'; }
-        else if(level === 'denied'){ el.textContent = '（已拒绝，扩展管理里开启）'; el.className = 'link warn'; }
-        else { el.textContent = '（点击授权）'; el.className = 'link'; }
+        if(level === 'granted'){ el.textContent = '已授权'; el.className = 'auth-pill granted'; }
+        else if(level === 'denied'){ el.textContent = '已拒绝'; el.className = 'auth-pill denied'; }
+        else { el.textContent = '点击授权'; el.className = 'auth-pill'; }
       });
-    }catch(e){ el.textContent = '（通知 API 异常）'; el.className = 'link warn'; }
+    }catch(e){ el.textContent = 'API 异常'; el.className = 'auth-pill denied'; }
     return;
   }
   if(!('Notification' in window)){
-    el.textContent = '（浏览器不支持）'; el.className = 'link warn'; el.onclick = null; return;
+    el.textContent = '不支持'; el.className = 'auth-pill denied'; el.onclick = null; return;
   }
   if(location.protocol === 'file:'){
-    el.textContent = '（本地文件不支持，需 localhost/https）'; el.className = 'link warn'; return;
+    el.textContent = '本地不支持'; el.className = 'auth-pill denied'; return;
   }
   var p = Notification.permission;
-  if(p === 'granted'){ el.textContent = '（已授权）'; el.className = 'link ok'; }
-  else if(p === 'denied'){ el.textContent = '（已拒绝，点锁形图标开启）'; el.className = 'link warn'; }
-  else { el.textContent = '（点击授权）'; el.className = 'link'; }
+  if(p === 'granted'){ el.textContent = '已授权'; el.className = 'auth-pill granted'; }
+  else if(p === 'denied'){ el.textContent = '已拒绝'; el.className = 'auth-pill denied'; }
+  else { el.textContent = '点击授权'; el.className = 'auth-pill'; }
 }
 function requestNotifyPerm(e){
   if(e){ e.preventDefault(); e.stopPropagation(); }
@@ -3093,6 +4216,14 @@ async function saveAlertSettings(){
   alerts.settings.notice = $('#setNotice').checked;
   alerts.settings.stockNotice = $('#setStockNotice').checked;
   alerts.settings.sound = $('#setSound').checked;
+  var commRateW = parseFloat($('#setCommRateW').value);
+  var minComm = parseFloat($('#setMinComm').value);
+  var stampTaxW = parseFloat($('#setStampTaxW').value);
+  var fundRateW = parseFloat($('#setFundRateW').value);
+  alerts.settings.commRateW = (!isNaN(commRateW) && commRateW >= 0) ? commRateW : 2.5;
+  alerts.settings.minComm = (!isNaN(minComm) && minComm >= 0) ? minComm : 5;
+  alerts.settings.stampTaxW = (!isNaN(stampTaxW) && stampTaxW >= 0) ? stampTaxW : 5;
+  alerts.settings.fundRateW = (!isNaN(fundRateW) && fundRateW >= 0) ? fundRateW : 10;
   var wantNotify = $('#setNotify').checked;
   if(wantNotify){
     /* 扩展原生通知：权限由 Chrome 在首次 create 时弹窗授予；这里只拦"已拒绝"的情况 */

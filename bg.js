@@ -71,6 +71,8 @@ chrome.runtime.onMessage.addListener(function(msg, sender, sendResponse){
     if(/stock\.finance\.sina/.test(host)) return 'https://finance.sina.com.cn/';
     /* 公告详情接口（np-cnotice / np-anotice）：公告详情页本身在 data.eastmoney.com，按该域名给 referer */
     if(/np-(cnotice|anotice)/.test(host)) return 'https://data.eastmoney.com/';
+    /* 行业资金流 dataapi（data.eastmoney.com/dataapi/bkzj/getbkzj，hy.html 同源）：给页面自身 referer */
+    if(host === 'data.eastmoney.com') return 'https://data.eastmoney.com/bkzj/hy.html';
     return 'https://fund.eastmoney.com/';
   }
 

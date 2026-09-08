@@ -33,5 +33,82 @@
     "condition": {
       "urlFilter": "fundmobapi.eastmoney.com"
     }
+  },
+  {
+    "id": 3,
+    "priority": 1,
+    "action": {
+      "type": "modifyHeaders",
+      "requestHeaders": [
+        {
+          "header": "referer",
+          "operation": "set",
+          "value": "https://data.eastmoney.com/bkzj/hy.html"
+        }
+      ]
+    },
+    "condition": {
+      "urlFilter": "data.eastmoney.com",
+      "resourceTypes": ["xmlhttprequest", "other"]
+    }
+  },
+  {
+    "id": 4,
+    "priority": 1,
+    "action": {
+      "type": "modifyHeaders",
+      "responseHeaders": [
+        {
+          "header": "access-control-allow-origin",
+          "operation": "set",
+          "value": "*"
+        }
+      ]
+    },
+    "condition": {
+      "urlFilter": "data.eastmoney.com",
+      "resourceTypes": ["xmlhttprequest", "other"]
+    }
+  },
+  {
+    "id": 5,
+    "priority": 1,
+    "action": {
+      "type": "modifyHeaders",
+      "requestHeaders": [
+        {
+          "header": "origin",
+          "operation": "set",
+          "value": "https://quote.eastmoney.com"
+        },
+        {
+          "header": "referer",
+          "operation": "set",
+          "value": "https://quote.eastmoney.com/"
+        }
+      ]
+    },
+    "condition": {
+      "urlFilter": "push2ex.eastmoney.com",
+      "resourceTypes": ["xmlhttprequest", "other"]
+    }
+  },
+  {
+    "id": 6,
+    "priority": 1,
+    "action": {
+      "type": "modifyHeaders",
+      "responseHeaders": [
+        {
+          "header": "access-control-allow-origin",
+          "operation": "set",
+          "value": "*"
+        }
+      ]
+    },
+    "condition": {
+      "urlFilter": "push2ex.eastmoney.com",
+      "resourceTypes": ["xmlhttprequest", "other"]
+    }
   }
 ]
