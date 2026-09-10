@@ -48,6 +48,7 @@
   .btn:hover{filter:brightness(1.15);transform:translateY(-1px);}
   .btn:active{transform:translateY(0) scale(.97);}
   .btn:focus-visible{outline:2px solid var(--blue);outline-offset:2px;}
+  .btn:disabled{cursor:not-allowed;opacity:.45;filter:grayscale(.4);transform:none;}
   .btn.blue{background:var(--blue);color:#fff;} .btn.green{background:#15915c;color:#fff;} .btn.teal{background:#0f766e;color:#fff;} .btn.gold{background:var(--gold);color:#fff;}
   .btn[aria-disabled="true"]{opacity:.45;cursor:not-allowed;pointer-events:none;}
   .btn.ghost{background:transparent;border:1px solid var(--border);color:var(--muted);}
@@ -89,6 +90,22 @@
   .pnl-row .dot.f{background:#4f8cff;}
   .pnl-row .dot.s{background:#e8a13a;}
   .pnl-row .val{font-weight:700;margin-left:auto;}
+
+  /* 今日/昨日盈亏卡：近5日盈亏迷你柱状图（v138） */
+  .pnl-top{margin-top:10px;padding-top:8px;border-top:1px dashed var(--border);display:flex;flex-direction:column;gap:4px;}
+  .pnl-top-head{display:flex;align-items:baseline;justify-content:space-between;font-size:11px;color:var(--muted);}
+  .pnl-top-head .mini-range{font-size:10px;opacity:.85;font-variant-numeric:tabular-nums;}
+  .pnl-mini{margin-top:2px;}
+  .pnl-sum-grid{margin-top:4px;display:grid;grid-template-columns:repeat(3,1fr);gap:6px;}
+  .pnl-sum-cell .k{font-size:10px;color:var(--muted);}
+  .pnl-sum-cell .v{font-size:13px;font-weight:700;font-variant-numeric:tabular-nums;white-space:nowrap;}
+  .pnl-sum-cell .v .sep{color:var(--border);margin:0 2px;font-weight:400;}
+  .pnl-top-row{display:flex;align-items:center;gap:6px;font-size:12px;font-variant-numeric:tabular-nums;}
+  .pnl-top-row .tag{font-size:10px;line-height:1;padding:3px 5px;border-radius:4px;flex:none;font-weight:600;}
+  .pnl-top-row .tag.up{color:var(--red);background:rgba(240,52,52,.12);}
+  .pnl-top-row .tag.down{color:var(--green);background:rgba(34,160,93,.12);}
+  .pnl-top-row .nm{color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .pnl-top-row .pv{font-weight:700;margin-left:auto;flex:none;}
 
   /* 持仓市值卡内：盘中估算区块（与主数字视觉分层） */
   .mv-est{margin-top:10px;padding:8px 10px;background:rgba(54,128,202,.10);border:1px solid rgba(54,128,202,.28);border-radius:6px;}
@@ -148,7 +165,7 @@
   .idx-count b{color:var(--blue);}
 
   /* ===== 底部三栏 ===== */
-  .row3{display:grid;grid-template-columns:1fr 2fr;gap:14px;margin-bottom:16px;}
+  .row3{display:grid;grid-template-columns:1fr 2fr;gap:14px;margin-bottom:16px;align-items:start;}
   .zd-num{display:flex;align-items:baseline;gap:10px;margin:6px 0;}
   .zd-num .big{font-size:30px;font-weight:800;}
   .zd-bar{height:8px;border-radius:4px;overflow:hidden;display:flex;background:var(--panel2);margin:8px 0;}
@@ -176,7 +193,7 @@
      - 周期「今日/5日/10日排行」单选圆点
      - 图例：单位：元 + 净流入/流出家数 + 主力净流入/流出色块
      - 全量板块按净额降序从左到右，红柱向上 / 绿柱向下，柱下竖排名称 */
-  .bk-chart{width:100%;height:226px;}
+  .bk-chart{width:100%;height:236px;margin-bottom:-14px;}
   .bk-types{display:flex;gap:8px;margin:2px 0 10px;}
   .bk-type{padding:5px 14px;font-size:13px;line-height:1;border:1px solid var(--border);background:transparent;color:var(--text);border-radius:3px;cursor:pointer;transition:background .15s,color .15s,border-color .15s;white-space:nowrap;}
   .bk-type:hover{border-color:var(--blue);color:var(--blue);}
@@ -186,7 +203,7 @@
   .bk-tab::before{content:'';position:absolute;left:0;top:50%;transform:translateY(-50%);width:10px;height:10px;border-radius:50%;border:1px solid var(--muted);background:transparent;}
   .bk-tab.on::before{border-color:var(--blue);background:var(--blue);}
   .bk-tab.on{font-weight:500;}
-  .bk-legend{display:flex;align-items:center;gap:10px;font-size:11px;color:var(--muted);margin:4px 2px 8px;flex-wrap:wrap;font-variant-numeric:tabular-nums;}
+  .bk-legend{display:flex;align-items:center;gap:10px;font-size:11px;color:var(--muted);margin:2px 2px 6px;flex-wrap:wrap;font-variant-numeric:tabular-nums;}
   .bk-legend .unit{margin-right:auto;font-size:11px;}
   .bk-legend .legend-group{display:flex;gap:10px;align-items:center;}
   .bk-legend .lg{display:inline-flex;align-items:center;gap:4px;}
@@ -246,6 +263,17 @@
   .modal .field select{cursor:pointer;appearance:none;background-image:linear-gradient(45deg,transparent 50%,var(--muted) 50%),linear-gradient(135deg,var(--muted) 50%,transparent 50%);background-position:calc(100% - 14px) 50%,calc(100% - 10px) 50%;background-size:4px 4px,4px 4px;background-repeat:no-repeat;padding-right:28px;}
   /* 添加持仓：代码输入框加大并强调 */
   .modal .code-inp{font-size:16px;font-weight:600;letter-spacing:1px;padding:11px 12px;text-align:center;font-family:"Consolas","Microsoft YaHei",monospace;color:var(--text);}
+  /* 添加持仓：输入框搜索图标 + 快捷示例芯片 */
+  .modal .code-wrap{position:relative;}
+  .modal .code-wrap .code-ico{position:absolute;left:13px;top:50%;transform:translateY(-50%);width:16px;height:16px;color:var(--muted);pointer-events:none;}
+  .modal .code-wrap .code-ico svg{width:100%;height:100%;display:block;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;}
+  .modal .code-wrap .code-inp{width:100%;box-sizing:border-box;text-align:left;padding-left:36px;}
+  .add-examples{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin:8px 0 12px;}
+  .add-examples .ex-lbl{font-size:11px;color:var(--muted);flex:none;}
+  .add-examples .ex-chip{display:inline-flex;align-items:center;gap:5px;padding:4px 10px;border:1px solid var(--border);border-radius:14px;background:var(--bg);cursor:pointer;font-size:12px;color:var(--text);transition:border-color .14s,color .14s;user-select:none;}
+  .add-examples .ex-chip:hover{border-color:var(--blue);color:var(--blue);}
+  .add-examples .ex-chip b{font-family:"Consolas","Microsoft YaHei",monospace;font-weight:600;}
+  .add-examples .ex-chip span{font-size:11px;color:var(--muted);}
   .modal .ops{display:flex;justify-content:flex-end;gap:8px;margin-top:14px;padding-top:14px;border-top:1px dashed var(--border);}
   .modal .ops .btn{padding:8px 22px;font-size:13px;font-weight:600;border-radius:7px;min-width:76px;}
   .modal.wide{width:720px;max-height:80vh;display:flex;flex-direction:column;}
@@ -673,6 +701,7 @@
       <div class="pnl-row" data-page-node-id="WR9tg7eEfjweWYQqJooR5S"><i class="dot f" data-page-node-id="RLCCxTdlfELVPoGfHnpHy2"></i><span data-page-node-id="r9WUXDsLZQ0NjrDVIBBnQL">基金</span><span class="val" id="pnlFund" data-page-node-id="AtiU8WzfKomDxNvrpHiAVL">--</span></div>
       <div class="pnl-row" data-page-node-id="G9ZuiUePntjBY4VSnEK32K"><i class="dot s" data-page-node-id="8shACyYi0SdS6plkHC9HbF"></i><span data-page-node-id="Cr1VW1OPLJpo2lU6BxevY1">股票</span><span class="val" id="pnlStock" data-page-node-id="7EIvx2QKdTHyskP3ibCtNb">--</span></div>
     </div>
+    <div class="pnl-top" id="pnlTop" style="display:none"></div>
   </div>
   <div class="card" data-page-node-id="LYhHJrwXeA6swktVHPDeDJ">
     <div class="chart-head" data-page-node-id="D8N9iXdJOOIzmOD6Nr4ecj">
@@ -735,7 +764,7 @@
   </div>
   <div class="card" data-page-node-id="K882he8PE2KdDwOOHkhVrX">
     <div class="label label-flex" data-page-node-id="UrkIKOylSAbetzKDrmj8ck">
-      <span data-page-node-id="QNzdjIkFCZHbXubaI1sxqR">板块资金流（东方财富）</span>
+      <span data-page-node-id="QNzdjIkFCZHbXubaI1sxqR">板块资金流</span>
       <button class="btn ghost fold-btn" data-act="toggleCard" data-args='["bk"]' data-page-node-id="GFDcyIFFyt3o6Ak0WeQ31F">收起</button>
     </div>
     <div data-fold-body="bk">
@@ -784,7 +813,7 @@
 </div>
 
 <div class="footer" data-page-node-id="5mzn8eeIKhJiHZZYyCZBUS">
-  <div data-page-node-id="zUp8qF5bZSbN5uoUBsDvh0">看板版本 v136（2026-09-08）· 数据通道：<span id="srcStatus" data-page-node-id="z1wYSVq2SDR3rGEc2DuS8q">检测中…</span>（若有 ✗ 请刷新重试）· <a href="https://beiyucloud.taoxinyuan.com" target="_blank" rel="noopener noreferrer" style="color:var(--blue);text-decoration:none" data-page-node-id="DdTbDsjtUyJZgVdPL14zdg">持仓实时盈亏看板</a> · <a href="privacy.html" target="_blank" rel="noopener noreferrer" style="color:var(--blue);text-decoration:none\" data-page-node-id="FefdJe82QUh4pQusOzTsHG">隐私政策</a></div>
+  <div data-page-node-id="zUp8qF5bZSbN5uoUBsDvh0">看板版本 v152（2026-09-10）· 数据通道：<span id="srcStatus" data-page-node-id="z1wYSVq2SDR3rGEc2DuS8q">检测中…</span>（若有 ✗ 请刷新重试）· <a href="https://beiyucloud.taoxinyuan.com" target="_blank" rel="noopener noreferrer" style="color:var(--blue);text-decoration:none" data-page-node-id="DdTbDsjtUyJZgVdPL14zdg">持仓实时盈亏看板</a> · <a href="privacy.html" target="_blank" rel="noopener noreferrer" style="color:var(--blue);text-decoration:none\" data-page-node-id="FefdJe82QUh4pQusOzTsHG">隐私政策</a></div>
   数据来源：新浪财经（盘中实时估算）· 天天基金移动端接口（净值/重仓股）· 腾讯行情（指数）· 东方财富（个股实时行情 / 涨跌家数 / 行业板块 / 国际金价）。<br data-page-node-id="PZMJhv4er1FN8SaVQfTn8n">
   计算口径：填份额时 今日盈亏 = 份额 ×（估算净值 − 昨日净值）（盘中/盘后显示实时估算）；持有收益率 = 已结算市值 ÷（份额 × 成本价）− 1，净值未公布时沿用上一交易日确认净值、不随盘中估值跳动，净值公布后自动更新；未填份额时按「持有市值 × 估算涨幅」近似。<br data-page-node-id="nmwS0MHOUCZIY8BU70uad3">
   「实时估算」为新浪基于基金前十大重仓股/债券/ETF 的加权估算（分钟级）；「重仓估算」为本页按前十大重仓股实时行情的自建兜底估算。估算均基于上季持仓，与实际净值有偏差，仅供参考。<br data-page-node-id="CDL3UwBopiRFtyToi6tonR">
@@ -878,16 +907,21 @@
       <span class="close-x" data-act="closeAddModal" title="关闭" data-page-node-id="CEfAhvCbKJfPw8ua01gDyV">×</span>
     </h3>
     <div class="tip" data-page-node-id="oz84DXDHHkbIfnADfkCHBS">输入代码自动识别品种；同代码同时存在（如 LOF）时可手动指定为「场外基金」或「场内交易」。</div>
-    <input id="inAddCode" class="code-inp" placeholder="如 161725 / 00700.HK / AAPL" maxlength="12" autocomplete="off" data-evt="input" data-act="onAddCodeInput" data-page-node-id="IaeBHCOCobNjDtH4gfUoJd">
+    <div class="code-wrap">
+      <span class="code-ico"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.35-4.35"/></svg></span>
+      <input id="inAddCode" class="code-inp" placeholder="如 161725 / 00700.HK / AAPL" maxlength="12" autocomplete="off" data-evt="input" data-act="onAddCodeInput" data-page-node-id="IaeBHCOCobNjDtH4gfUoJd">
+    </div>
+    <div id="addExamples" class="add-examples">
+      <span class="ex-lbl">试试</span>
+      <span class="ex-chip" data-act="fillAddExample" data-args='["161725"]'><b>161725</b><span>场外基金</span></span>
+      <span class="ex-chip" data-act="fillAddExample" data-args='["510300"]'><b>510300</b><span>ETF</span></span>
+      <span class="ex-chip" data-act="fillAddExample" data-args='["00700.HK"]'><b>00700.HK</b><span>港股</span></span>
+      <span class="ex-chip" data-act="fillAddExample" data-args='["AAPL"]'><b>AAPL</b><span>美股</span></span>
+    </div>
     <div id="addIdentResult" class="add-ident" data-page-node-id="1T9XCTcugNT4GzDvFYvUwC"></div>
     <!-- 场外基金字段 -->
     <div id="addFundFields" class="add-fields" data-page-node-id="NEl2j1nDPwqNhTdPD6gVFN">
       <div class="fg" data-page-node-id="66pHaznzIFUTMjc5xqe5jS">
-        <div class="fg-h" data-page-node-id="Fu2hnJCB3IaftdJ7iwDSbu">基础信息</div>
-        <div class="field" data-page-node-id="Vi5nlUtAuHyuioanWLzAhm">
-          <label class="lab" for="inAddName" data-page-node-id="AKfRRxP2V1CG7LoLTVnaBz">基金名称</label>
-          <input id="inAddName" placeholder="选填；接口拿不到时手填" maxlength="40" data-page-node-id="hEHpDHbJV0k08Hz5OCwKKv">
-        </div>
         <div class="field" data-page-node-id="5Ufhvwj75IKYa6KlKJc5HU">
           <label class="lab" for="inAddShares" data-page-node-id="QS6JcjgFCgcBxNw5x2smOB">持有份额</label>
           <input id="inAddShares" placeholder="如 5230.66" type="number" step="0.01" data-page-node-id="SNkf1ATVOChlzZknEhiZK6">
@@ -938,7 +972,7 @@
     </div>
     <div class="ops" data-page-node-id="Jg1J9dG3x8akoED58LzjpG">
       <button class="btn ghost" data-act="closeAddModal" data-page-node-id="HlUbAAiiABDsUWYFdWStsU">取消</button>
-      <button class="btn blue" data-act="saveAdd" data-page-node-id="cJ2PoA1EWv19EdFNOwU7i7">确定</button>
+      <button class="btn blue" id="addSaveBtn" disabled data-act="saveAdd" data-page-node-id="cJ2PoA1EWv19EdFNOwU7i7">确定</button>
     </div>
   </div>
 </div>
@@ -1133,11 +1167,11 @@
   <div class="modal donate-modal" data-page-node-id="uCHA4HGRTgE2iQgDANuXCk">
     <h3 data-page-node-id="vswdbFwjO8R29aUqMt9HTi">☕ 赚钱了请我喝杯咖啡哟~</h3>
     <div class="donate-thanks" data-page-node-id="sV6fjUdmCiCs1AcW9MWxBP">感谢有您的支持，持仓盈亏看板才能一直保持更新，增加更多功能。</div>
-    <div class="donate-qr-wrap" id="donateQrWrap" data-page-node-id="SBclfzIRETy1NH8QYFnpUa">
-      <img class="donate-qr" src="./donate.png" alt="" onerror="document.getElementById('donateQrWrap').classList.add('noimg');" data-page-node-id="CFieMC9ySVT9oJhO4OBmno">
+    <div class="donate-qr-wrap noimg" id="donateQrWrap" data-page-node-id="SBclfzIRETy1NH8QYFnpUa">
+      <img class="donate-qr" id="donateQrImg" alt="" data-page-node-id="CFieMC9ySVT9oJhO4OBmno">
       <div class="donate-qr-fallback" data-page-node-id="bmrVoLLluTrGuHWBlJTRyF">☕</div>
     </div>
-    <div class="donate-channel" data-page-node-id="8z5B9SCjmJiZFnnepIu0u0">微信 · 扫一扫 · 可留言</div>
+    <div class="donate-channel" id="donateChannel" data-page-node-id="8z5B9SCjmJiZFnnepIu0u0">微信 · 扫一扫 · 可留言</div>
     <div class="ops" style="margin-top:18px;" data-page-node-id="V6qxYe2SufeKsABMpdziJy">
       <button class="btn gold" data-act="closeDonate" data-page-node-id="jlJA10t6gCcxsuqLU0O1Kh">打赏好了</button>
       <button class="btn ghost" data-act="closeDonate" style="margin-left:8px;" data-page-node-id="Z8oxxH6WDCWXQ4neemCnkt">下次一定</button>

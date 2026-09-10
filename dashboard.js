@@ -761,7 +761,7 @@ function renderMarketFlow(rows){
   }, true);
   if(!window.__zdFlowResizeBound){
     window.__zdFlowResizeBound = true;
-    window.addEventListener('resize', function(){ if(zdFlowChart) zdFlowChart.resize(); });
+    window.addEventListener('resize', function(){ if(zdFlowChart) zdFlowChart.resize(); }); window.addEventListener('resize', function(){ setTimeout(fitBkHeight, 60); });
   }
   /* 图例：5 线最新累计值（数值红正绿负，中国习惯；线色固定对齐东财） */
   var elLg = document.getElementById('zdFlowLegend');
@@ -818,23 +818,47 @@ function renderBkFlow(list, field, emptyText){
   bkChart = echarts.init(host, null, {renderer:'canvas'});
   bkChart.setOption({
     animation: false,                                             /* 128 柱 + 窗口移动，开动画反而抖 */
-    grid:{left:54, right:16, top:14, bottom:118},
+    grid:{left:54, right:16, top:14, bottom:110},
     tooltip:{trigger:'axis', axisPointer:{type:'shadow'}, backgroundColor:TC.chartBg, borderColor:TC.chartBorder,
       textStyle:{color:TC.text, fontSize:12},
       valueFormatter:function(v){ return (v === null || v === undefined) ? '--' : (Number(v) > 0 ? '+' : '') + Number(v).toFixed(2) + ' 亿'; }},
     xAxis:{type:'category', data:names, axisLine:{lineStyle:{color:TC.chartAxis}}, axisTick:{show:false},
-      axisLabel:{color:TC.text, fontSize:11, fontWeight:500, interval:0, hideOverlap:false, align:'center', verticalAlign:'top', lineHeight:14,
-        formatter:function(v){ return (v || '').split('').join('\n'); }}},
+      axisLabel:{color:TC.text, fontSize:11, fontWeight:500, interval:0, hideOverlap:false, align:'center', verticalAlign:'top', lineHeight:12,
+        /* 混排：中文逐字竖排；字母/数字/括号连续段保持横排一组（小字号控宽）；括号不单独占行——开括号与后一字符同行、闭括号与前一字符同行 */
+        formatter:function(v){
+          v = v || '';
+          var segs = v.match(/[A-Za-z0-9().+\-·&/]+|[\s\S]/g) || [v];
+          var out = [];
+          for(var i = 0; i < segs.length; i++){
+            var s = segs[i];
+            if(/[A-Za-z0-9]/.test(s)){
+              out.push('{e|' + s + '}');
+            } else if((s === '（' || s === '(') && i < segs.length - 1){
+              var nx = segs[++i];
+              out.push(/[A-Za-z0-9]/.test(nx) ? '{e|' + s + nx + '}' : s + nx);
+            } else if((s === '）' || s === ')') && out.length){
+              var pv = out[out.length - 1];
+              out[out.length - 1] = (pv.indexOf('{e|') === 0 && pv.charAt(pv.length - 1) === '}') ? pv.slice(0, -1) + s + '}' : pv + s;
+            } else {
+              out.push(s);
+            }
+          }
+          /* 超长名截断：最多 6 行（含省略号），保证卡片高度可控、不与滑块相撞 */
+          if(out.length > 6){ out = out.slice(0, 5).concat('…'); }
+          return out.join('\n');
+        },
+        rich:{e:{fontSize:9, fontWeight:500, color:TC.text, lineHeight:12}}}},
     axisPointer:{label:{show:false}},
     yAxis:{type:'value', scale:true, splitLine:{lineStyle:{color:TC.chartSplit}}, axisLine:{show:false}, axisTick:{show:false},
       axisLabel:{color:TC.muted, fontSize:10, formatter:function(v){ return v.toFixed(2) + '亿'; }}},
     dataZoom:[
       {type:'inside', startValue:0, endValue:win - 1, zoomLock:true, zoomOnMouseWheel:false, moveOnMouseWheel:true, moveOnMouseMove:true},
-      {type:'slider', startValue:0, endValue:win - 1, zoomLock:true, height:24, bottom:8, showDetail:false, brushSelect:false,
-       borderColor:'#e0e0e0', backgroundColor:'#f5f5f5', fillerColor:'rgba(34,139,230,.24)',
-       handleStyle:{color:'#228be6', borderColor:'#228be6'}, handleSize:'120%', moveHandleSize:0,
-       dataBackground:{lineStyle:{color:'#d9d9d9'}, areaStyle:{color:'#d9d9d9', opacity:.3}},
-       selectedDataBackground:{lineStyle:{color:'#228be6'}, areaStyle:{color:'#228be6', opacity:.25}}}
+      {type:'slider', startValue:0, endValue:win - 1, zoomLock:true, height:16, bottom:2, showDetail:false, brushSelect:false,
+       /* 半透明滑块：轨道/区间条/数据影子全部低透明度，长板块名（竖排）延伸到此区域时可透出；已与文字区留出安全间隙 */
+       borderColor:'rgba(130,130,130,.25)', backgroundColor:'rgba(130,130,130,.10)', fillerColor:'rgba(34,139,230,.30)',
+       handleStyle:{color:'rgba(34,139,230,.70)', borderColor:'rgba(34,139,230,.75)'}, handleSize:'120%', moveHandleSize:0,
+       dataBackground:{lineStyle:{color:'rgba(150,150,150,.45)'}, areaStyle:{color:'rgba(150,150,150,.12)'}},
+       selectedDataBackground:{lineStyle:{color:'rgba(34,139,230,.55)'}, areaStyle:{color:'rgba(34,139,230,.12)'}}}
     ],
     series:[{
       type:'bar', data:vals, barMaxWidth:18,
@@ -984,6 +1008,7 @@ function bkScheduleAutoRetry(){
 // v3（v127）：两张板块卡（bkUp/bkDown）合并为单卡 bk，升 v3 重置折叠态，保证默认展开。
 var CARD_FOLD_KEY = 'fund_board_card_fold_v3';
 var CARD_FOLD_KEYS = ['zd','bk'];
+var BK_CHART_DEFAULT_H = 236;   /* 左卡收起时右卡图表的默认高度（对应右卡总高约 379） */
 function loadCardFold(){
   try{
     var raw = localStorage.getItem(CARD_FOLD_KEY);
@@ -997,6 +1022,43 @@ function loadCardFold(){
 function saveCardFold(obj){
   try{ localStorage.setItem(CARD_FOLD_KEY, JSON.stringify(obj)); }catch(e){}
 }
+/* 板块资金流卡自动配平左侧「今日涨跌家数」卡高度（v149）
+   目的：两卡严格等高 → 收起/展开任一张时下方内容不再跳动。
+   做法：把图表容器高度临时归零量出右卡「除图表外」的自然高，
+        再按 左卡高 - 右卡自然高 反推图表应有高度，最后 resize ECharts。
+   收起状态直接跳过（此时图表不可见，参与计算会算错）。 */
+function fitBkHeight(){
+  try{
+    var row = document.querySelector('.row3');
+    if(!row) return;
+    var cards = row.children;
+    if(cards.length < 2) return;
+    var left = cards[0], right = cards[1];
+    var chart = document.getElementById('bkFlow');
+    if(!chart) return;
+    var body = document.querySelector('[data-fold-body="bk"]');
+    if(!body || body.style.display === 'none') return;      /* 右卡已收起：不参与配平 */
+    var prev = chart.style.height;
+    var lbody = document.querySelector('[data-fold-body="zd"]');
+    if(!lbody || lbody.style.display === 'none'){           /* 左卡已收起：没有目标高度可配平，
+                                                               恢复默认高度，两卡各自独立不强行等高 */
+      if(prev !== BK_CHART_DEFAULT_H + 'px'){
+        chart.style.height = BK_CHART_DEFAULT_H + 'px';
+        if(typeof bkChart !== 'undefined' && bkChart){ bkChart.resize(); }
+      }
+      return;
+    }
+    chart.style.height = '0px';                             /* 归零量自然高（含负 margin） */
+    var natural = right.getBoundingClientRect().height;
+    var target = left.getBoundingClientRect().height;
+    var h = Math.round(target - natural);
+    if(!isFinite(h) || h < 140) h = 140;                    /* 下限：保证柱区仍可读 */
+    if(h > 460) h = 460;
+    chart.style.height = h + 'px';
+    if(h + 'px' !== prev && typeof bkChart !== 'undefined' && bkChart){ bkChart.resize(); }
+  }catch(e){}
+}
+
 function applyCardFold(key){
   var fold = loadCardFold();
   var collapsed = !!fold[key];
@@ -1009,6 +1071,7 @@ function applyCardFold(key){
     setTimeout(function(){
       try{ if(chartInstance) chartInstance.resize(); }catch(e){}
       try{ if(bkChart) bkChart.resize(); }catch(e){}
+      fitBkHeight();
     }, 0);
   }
 }
@@ -1025,7 +1088,7 @@ function toggleCard(key){
 /* ================= 渲染：持仓与汇总 ================= */
 function renderHoldings(){
   var html = '', totalMv = 0, totalPnl = 0, totalCost = 0, hasCost = false, n = 0, realizedAll = 0, anyTime = '', noGzCount = 0, holdEstCount = 0, closeEstCount = 0, navTime = '';
-  var prevMv = 0, cumAll = 0, ytdPnl = 0, ytdPrevMv = 0;
+  var prevMv = 0, cumAll = 0, ytdPnl = 0, ytdPrevMv = 0, todayContrib = [], ytdContrib = [];
   holdings.forEach(function(h){
     var info = fundInfo[h.code];
     var c = calcRow(h, info);
@@ -1048,11 +1111,15 @@ function renderHoldings(){
     if(h.realized) realizedAll += h.realized;
     n++;
     /* 昨日盈亏：市值 × 昨日单日涨跌幅(NAVCHGRT，mobapi 返回的"最新交易日涨跌幅"即昨日)。
-       非盘中时段顶部卡会显示"昨日盈亏"而不是空洞的"今日盈亏=0" */
+       非盘中时段顶部卡会显示"昨日盈亏"而不是空洞的"今日盈亏=0"
+       v138：同时记录逐只贡献，供顶部卡「贡献 TOP」取赚最多/拖后腿 */
     if(info && info.navPct !== null && !isNaN(info.navPct) && c.mv !== null){
-      ytdPnl += c.mv * info.navPct / 100;
+      var _yOne = c.mv * info.navPct / 100;
+      ytdPnl += _yOne;
       ytdPrevMv += c.mv;
+      ytdContrib.push({name: name, pnl: _yOne});
     }
+    if(c.pnl !== null) todayContrib.push({name: name, pnl: c.pnl});
     /* 名称后缀：估算来源标识 */
     var suffix = '';
     if(info && info.estType === 'sina'){ suffix = ' <span style="font-size:11px;color:var(--blue)">(实时估算)</span>'; }
@@ -1118,7 +1185,8 @@ function renderHoldings(){
     fundCount: n, anyTime: anyTime, navTime: navTime, noGzCount: noGzCount, holdEstCount: holdEstCount, closeEstCount: closeEstCount,
     hasPnl: hasPnl, hasCost: hasCost, totalCost: totalCost, cumAll: cumAll, realizedAll: realizedAll,
     latestNavDate: latestNavDate,
-    ytdPnl: ytdPnl, ytdPrevMv: ytdPrevMv, ytdPct: ytdPrevMv > 0 ? ytdPnl / ytdPrevMv * 100 : 0
+    ytdPnl: ytdPnl, ytdPrevMv: ytdPrevMv, ytdPct: ytdPrevMv > 0 ? ytdPnl / ytdPrevMv * 100 : 0,
+    todayContrib: todayContrib, ytdContrib: ytdContrib
   };
 }
 
@@ -1703,6 +1771,7 @@ async function refreshAll(){
     _refreshing = false;
     if(_rBtn){ _rBtn.disabled = false; _rBtn.innerHTML = _rBtnHtml || '<svg viewBox="0 0 24 24" style="width:16px;height:16px;fill:currentColor"><path d="M17.65 6.35C16.2 4.9 14.21 4 12 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08c-.82 2.33-3.04 4-5.65 4-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"/></svg>'; }
     applyAllCardFold();
+    setTimeout(fitBkHeight, 0);
   }
 }
 
@@ -2686,9 +2755,10 @@ function stockLotUnit(code){
 }
 
 function renderStocks(){
-  var html = '', totMv = 0, totPnl = 0, totPrev = 0, totCum = 0, totCost = 0, totRealized = 0, hasCost = false, hasPnl = false, n = 0, ytdPnl = 0, ytdPrevMv = 0;
+  var html = '', totMv = 0, totPnl = 0, totPrev = 0, totCum = 0, totCost = 0, totRealized = 0, hasCost = false, hasPnl = false, n = 0, ytdPnl = 0, ytdPrevMv = 0, todayContrib = [], ytdContrib = [];
   stocks.forEach(function(s){
     var q = stockInfo[s.code];
+    var _nm = (q && q.name) ? q.name : s.code;   /* v138 贡献 TOP 用名称 */
     var price = q ? q.price : null, pct = q ? q.pct : null, prev = q ? q.prevClose : null;
     var mv = (price !== null && s.shares) ? s.shares * price : null;
     var pnl = (price !== null && prev !== null && s.shares) ? s.shares * (price - prev) : null;
@@ -2702,17 +2772,20 @@ function renderStocks(){
     if(mv !== null){
       totMv += mv; n++;
       /* 昨日盈亏：股数 ×(昨收 − 前收)。前收从新浪日K trend 倒数第2天取（非盘中也有数据）。
-         非盘中时段顶部卡会显示"昨日盈亏"而不是空洞的"今日盈亏=0" */
+         非盘中时段顶部卡会显示"昨日盈亏"而不是空洞的"今日盈亏=0"
+         v138：同时记录逐只贡献，供顶部卡「贡献 TOP」取赚最多/拖后腿 */
       if(q && q.trend && q.trend.length >= 2 && s.shares){
         var _tl = q.trend.length;
         var _yC = q.trend[_tl - 1].close, _yP = q.trend[_tl - 2].close;
         if(!isNaN(_yC) && !isNaN(_yP) && _yP > 0){
-          ytdPnl += s.shares * (_yC - _yP);
+          var _yOne = s.shares * (_yC - _yP);
+          ytdPnl += _yOne;
           ytdPrevMv += s.shares * _yP;
+          ytdContrib.push({name: _nm, pnl: _yOne});
         }
       }
     }
-    if(pnl !== null){ totPnl += pnl; hasPnl = true; }
+    if(pnl !== null){ totPnl += pnl; hasPnl = true; todayContrib.push({name: _nm, pnl: pnl}); }
     if(prevMv !== null) totPrev += prevMv;
     if(cumPnl !== null) totCum += cumPnl;
     if(s.cost && s.shares){ totCost += s.shares * s.cost; hasCost = true; }
@@ -2750,7 +2823,9 @@ function renderStocks(){
   /* 整段 section 显示控制：无任何股票持仓时连标题带表一起隐藏 */
   $('#stockSection').style.display = stocks.length ? '' : 'none';
   return {totalMv: totMv, totalPnl: totPnl, prevMv: totPrev, count: n, hasPnl: hasPnl, cum: totCum, totalCost: totCost, hasCost: hasCost, realized: totRealized,
-    ytdPnl: ytdPnl, ytdPrevMv: ytdPrevMv, ytdPct: ytdPrevMv > 0 ? ytdPnl / ytdPrevMv * 100 : 0};
+    ytdPnl: ytdPnl, ytdPrevMv: ytdPrevMv, ytdPct: ytdPrevMv > 0 ? ytdPnl / ytdPrevMv * 100 : 0,
+    todayContrib: todayContrib, ytdContrib: ytdContrib
+  };
 }
 
 /* ================= 汇总卡片（基金+股票合并） ================= */
@@ -2771,6 +2846,104 @@ function showYesterdayView(d){
   var t = x.getHours() * 60 + x.getMinutes();
   return t < 570; // 9:30 之前（盘前）：显示昨日盈亏
 }
+/* v138 近 N 日每日盈亏（金额）：按持仓逐只按日汇总
+     - 基金：份额×(当日净值−前一日净值)；无份额时用录入市值×当日涨跌幅（pingzhongdata 走势）
+     - 股票：股数×(当日收盘−前一日收盘)（新浪日K）
+   只统计"已结算"交易日：剔除当日（盘中未完结 / 净值未公布），避免柱子随时点漂移 */
+function buildRecentDailyPnl(n){
+  var d0 = new Date();
+  var todayStr = d0.getFullYear() + '-' + ('0' + (d0.getMonth() + 1)).slice(-2) + '-' + ('0' + d0.getDate()).slice(-2);
+  var map = {};
+  holdings.forEach(function(h){
+    var info = fundInfo[h.code], t = info && info.trend;
+    if(!t) return;
+    for(var i = 1; i < t.length; i++){
+      var d = t[i].date;
+      if(!d || d >= todayStr) continue;
+      var amt = null;
+      if(h.shares && isFinite(t[i].nav) && isFinite(t[i - 1].nav)){
+        amt = h.shares * (t[i].nav - t[i - 1].nav);
+      }else if(h.amount && isFinite(t[i].ret)){
+        amt = h.amount * t[i].ret / 100;
+      }
+      if(amt === null || isNaN(amt)) continue;
+      map[d] = (map[d] || 0) + amt;
+    }
+  });
+  stocks.forEach(function(s){
+    var q = stockInfo[s.code], t = q && q.trend;
+    if(!t || !s.shares) return;
+    for(var i = 1; i < t.length; i++){
+      var d = t[i].date;
+      if(!d || d >= todayStr) continue;
+      if(!isFinite(t[i].close) || !isFinite(t[i - 1].close)) continue;
+      map[d] = (map[d] || 0) + s.shares * (t[i].close - t[i - 1].close);
+    }
+  });
+  var keys = Object.keys(map).sort();
+  return keys.slice(-n).map(function(k){ return {date: k.slice(5), full: k, amount: map[k]}; });
+}
+
+/* v138 近5日盈亏迷你柱状图（内联 SVG 手写，红涨绿跌，金额走 tooltip） */
+function renderPnlMini5(){
+  var box = $('#pnlTop');
+  if(!box) return;
+  var rows = buildRecentDailyPnl(5);
+  if(rows.length < 2){ box.style.display = 'none'; box.innerHTML = ''; return; }
+  var W = 100, H = 30, zero = 15, maxH = 12, gap = 4;
+  var bw = (W - gap * (rows.length - 1)) / rows.length;
+  var maxAbs = 0;
+  rows.forEach(function(r){ maxAbs = Math.max(maxAbs, Math.abs(r.amount)); });
+  var svg = '<svg class="pnl-mini" viewBox="0 0 ' + W + ' ' + H + '" width="100%" height="30" preserveAspectRatio="none" style="display:block">'
+          + '<rect x="0" y="' + (zero - 0.25) + '" width="' + W + '" height="0.5" style="fill:var(--border)"/>';
+  rows.forEach(function(r, i){
+    var h = maxAbs > 0 ? Math.max(0.8, Math.abs(r.amount) / maxAbs * maxH) : 0.8;
+    var x = i * (bw + gap);
+    var y = r.amount >= 0 ? zero - h : zero;
+    var col = r.amount > 0 ? 'var(--red)' : (r.amount < 0 ? 'var(--green)' : 'var(--muted)');
+    svg += '<rect x="' + x.toFixed(2) + '" y="' + y.toFixed(2) + '" width="' + bw.toFixed(2) + '" height="' + h.toFixed(2)
+         + '" style="fill:' + col + '"><title>' + r.date + '　' + fmtSigned(r.amount, 0) + ' 元</title></rect>';
+  });
+  svg += '</svg>';
+  box.innerHTML = '<div class="pnl-top-head"><span>近5日盈亏（元）</span><span class="mini-range">'
+                + rows[0].date + ' ~ ' + rows[rows.length - 1].date + '</span></div>' + svg;
+  box.style.display = '';
+}
+
+/* v138 累计小结：本周累计 / 近5日累计 / 5日涨跌天数
+     口径同 buildRecentDailyPnl（只统计已结算交易日，剔除当日），红涨绿跌。
+     本月/今年累计需要每日快照持续累积，当前无历史存储，暂不提供。 */
+function renderPnlSum(){
+  var box = $('#pnlTop');
+  if(!box) return;
+  var rows = buildRecentDailyPnl(20);
+  if(rows.length < 2){ box.style.display = 'none'; box.innerHTML = ''; return; }
+  /* 本周一（周一=当天，周日=往前 6 天） */
+  var d = new Date(), off = (d.getDay() === 0) ? -6 : (1 - d.getDay());
+  var md = new Date(d.getTime() + off * 86400000);
+  var pad = function(x){ return ('0' + x).slice(-2); };
+  var monStr = md.getFullYear() + '-' + pad(md.getMonth() + 1) + '-' + pad(md.getDate());
+  var week = 0, weekN = 0, last5 = 0, up = 0, dn = 0;
+  rows.forEach(function(r){ if(r.full >= monStr){ week += r.amount; weekN++; } });
+  rows.slice(-5).forEach(function(r){
+    last5 += r.amount;
+    if(r.amount > 0) up++; else if(r.amount < 0) dn++;
+  });
+  var cell = function(k, vHtml){
+    return '<div class="pnl-sum-cell"><div class="k">' + k + '</div><div class="v">' + vHtml + '</div></div>';
+  };
+  var wkHtml = weekN > 0 ? '<span style="color:' + clsTxt(week) + '">' + fmtSigned(week, 0) + '</span>'
+                         : '<span class="muted">—</span>';
+  var fiveHtml = '<span style="color:' + clsTxt(last5) + '">' + fmtSigned(last5, 0) + '</span>';
+  var cntHtml = (up || dn)
+    ? '<span style="color:var(--red)">' + up + '涨</span><span class="sep">/</span><span style="color:var(--green)">' + dn + '跌</span>'
+    : '<span class="muted">—</span>';
+  box.innerHTML = '<div class="pnl-top-head"><span>累计小结（元）</span><span class="mini-range">'
+                + rows[rows.length - 1].date + ' 结算</span></div>'
+                + '<div class="pnl-sum-grid">' + cell('本周累计', wkHtml) + cell('近5日', fiveHtml) + cell('5日涨跌', cntHtml) + '</div>';
+  box.style.display = '';
+}
+
 function updateSummary(fRes, sRes){
   /* 「未持仓」分支：基金+股票都没添加时，三大信息区均显示占位提示，
      避免股价为 0 / 累计 -- 等空跑视觉噪音 */
@@ -2789,6 +2962,7 @@ function updateSummary(fRes, sRes){
     $('#pnlTime').textContent = '点击顶部「+」按钮添加持仓';
     $('#pnlFund').textContent = '未持仓'; $('#pnlFund').className = 'val muted';
     $('#pnlStock').textContent = '未持仓'; $('#pnlStock').className = 'val muted';
+    var _pt = $('#pnlTop'); if(_pt){ _pt.style.display = 'none'; _pt.innerHTML = ''; }
     var eg = $('#emptyGuide'); if(eg) eg.style.display = '';
     try{ chrome.runtime.sendMessage({type:'updateBadge', pnl: 0}); }catch(_){ /* SW 未运行也无妨 */ }
     return {combMv: 0, combPnl: 0, combPct: 0, hasPnl: false, combYtdPnl: 0, combYtdPrevMv: 0, combYtdPct: 0, yView: false};
@@ -2883,6 +3057,9 @@ function updateSummary(fRes, sRes){
     $('#pnlFund').style.color = 'var(--muted)';
     $('#pnlFund').title = fRes.noGzCount + ' 只无盘中估值，晚间净值公布后计入';
   }
+
+  /* v138 累计小结（本周/近5日/5日涨跌天数） */
+  renderPnlSum();
 
   /* 5. 累计盈亏 chip（基金+股票合并口径） */
   var chip = $('#cumChip');
@@ -3096,12 +3273,15 @@ function probeStock(raw){
 function onAddCodeInput(){
   var raw = ($('#inAddCode').value || '').trim();
   var box = $('#addIdentResult');
+  var ex = $('#addExamples');
+  if(ex){ ex.style.display = raw ? 'none' : ''; }   /* 有输入时隐藏快捷示例 */
   function resetEmpty(){
     addState = {status:'empty', fundName:null, stkKey:null, stkName:null, kind:null};
     box.innerHTML = '';
     box.className = 'add-ident';
     $('#addFundFields').classList.remove('show');
     $('#addStkFields').classList.remove('show');
+    updateAddSaveBtn();
   }
   var nc = normStockCode(raw);
   if(!nc){ resetEmpty(); return; }
@@ -3130,6 +3310,7 @@ function onAddCodeInput(){
       addState.status = 'none'; addState.kind = null;
       box.className = 'add-ident ident-bad';
       box.innerHTML = '<span>识别服务暂时不可用，请稍后重试</span>';
+    updateAddSaveBtn();
     });
     return;
   }
@@ -3166,12 +3347,14 @@ function onAddCodeInput(){
       addState.status = 'none'; addState.kind = null;
       box.className = 'add-ident ident-bad';
       box.innerHTML = '<span>未找到该代码，请确认输入的是 6 位场内 / 场外代码</span>';
+    updateAddSaveBtn();
     }
     setAddFields();
   }).catch(function(){
     addState.status = 'none'; addState.kind = null;
     box.className = 'add-ident ident-bad';
     box.innerHTML = '<span>识别服务暂时不可用，请稍后重试</span>';
+    updateAddSaveBtn();
   });
 }
 function setAddFields(){
@@ -3181,7 +3364,37 @@ function setAddFields(){
   if(!fund && addState.stkKey){
     var sel = $('#inAddStkType'); if(sel) sel.value = classifyStockType(addState.stkKey).cls;
   }
+  updateAddSaveBtn();
 }
+/* 确定按钮可用性：仅识别成功（场外/场内/双选已定）时可提交，替代错误后 alert */
+function updateAddSaveBtn(){
+  var btn = document.getElementById('addSaveBtn');
+  if(!btn) return;
+  var ok = addState.status === 'fund' || addState.status === 'stock' || (addState.status === 'both' && !!addState.kind);
+  btn.disabled = !ok;
+  btn.title = ok ? '' : '请先输入代码并等待识别成功';
+}
+/* 快捷示例芯片：一键填入并触发识别 */
+function fillAddExample(code){
+  var inp = $('#inAddCode');
+  inp.value = code || '';
+  onAddCodeInput();
+  inp.focus();
+}
+/* 添加弹窗键盘：Enter 确认（识别成功时）/ Esc 关闭 */
+document.addEventListener('keydown', function(e){
+  var m = document.getElementById('maskAdd');
+  if(!m || !m.classList.contains('show')) return;
+  if(e.key === 'Escape'){ e.preventDefault(); closeAddModal(); }
+  else if(e.key === 'Enter'){
+    var t = e.target;
+    if(t && (t.tagName === 'INPUT' || t.tagName === 'SELECT') && m.contains(t)){
+      e.preventDefault();
+      var btn = document.getElementById('addSaveBtn');
+      if(btn && !btn.disabled){ saveAdd(); }
+    }
+  }
+});
 function selectAddKind(kind){
   if(addState.status !== 'both') return;
   addState.kind = kind;
@@ -3198,13 +3411,15 @@ function selectAddKind(kind){
 function openAddModal(){
   $('#addTitle').firstElementChild.textContent = '添加持仓';
   $('#inAddCode').value = '';
-  $('#inAddName').value = ''; $('#inAddShares').value = ''; $('#inAddCost').value = ''; $('#inAddAmount').value = '';
+  $('#inAddShares').value = ''; $('#inAddCost').value = ''; $('#inAddAmount').value = '';
   $('#inAddStkShares').value = ''; $('#inAddStkCost').value = '';
   $('#inAddStkType').value = 'stock';
   addState = {status:'empty', fundName:null, stkKey:null, stkName:null, kind:null};
   var box = $('#addIdentResult'); box.className = 'add-ident'; box.innerHTML = '';
   $('#addFundFields').classList.remove('show');
   $('#addStkFields').classList.remove('show');
+  var ex = $('#addExamples'); if(ex){ ex.style.display = ''; }
+  updateAddSaveBtn();
   $('#maskAdd').classList.add('show');
   setTimeout(function(){ $('#inAddCode').focus(); }, 30);
 }
@@ -3220,7 +3435,7 @@ function saveAdd(){
     var shares = parseFloat($('#inAddShares').value);
     var cost = parseFloat($('#inAddCost').value);
     var amount = parseFloat($('#inAddAmount').value);
-    var name = ($('#inAddName').value || '').trim() || addState.fundName || undefined;
+    var name = addState.fundName || undefined;
     var hasShares = !isNaN(shares) && shares > 0;
     if(!hasShares && (isNaN(amount) || amount <= 0)){ alert('请填写「持有份额」或「持有市值」至少一项'); return; }
     var entry = {code: code, name: name,
@@ -4092,8 +4307,36 @@ function closeAlerts(){
   $('#maskAlert').classList.remove('show'); updateAlertBadge();
 }
 /* 打赏弹窗（点击顶部「打赏」按钮弹出，显示微信赞赏码） */
-function openDonate(){ $('#maskDonate').classList.add('show'); }
+function openDonate(){ $('#maskDonate').classList.add('show'); loadDonateQr(); }
 function closeDonate(){ $('#maskDonate').classList.remove('show'); }
+/* 赞赏码远程加载（防换码篡改）：
+   码不打包进扩展，运行时从官网拉取——改包者替换本地图片无效，用户永远看到官方服务器上的真码。
+   主源 pages.dev / 备源自定义域，全部失败则显示官网指引文字。加载成功后会话内缓存。 */
+var DONATE_QR_URLS = ['https://beiyucloud.pages.dev/donate.png', 'https://beiyucloud.taoxinyuan.com/donate.png'];
+var donateQrLoaded = false;
+function loadDonateQr(){
+  var img = $('#donateQrImg'), wrap = $('#donateQrWrap'), ch = $('#donateChannel');
+  if(!img || !wrap || donateQrLoaded) return;
+  wrap.classList.add('noimg');
+  var idx = 0;
+  var tryNext = function(){
+    if(idx >= DONATE_QR_URLS.length){
+      if(ch) ch.textContent = '二维码加载失败 · 官方打赏码见 beiyucloud.pages.dev';
+      return;
+    }
+    var url = DONATE_QR_URLS[idx++];
+    var probe = new Image();
+    probe.onload = function(){
+      donateQrLoaded = true;
+      img.src = url;
+      wrap.classList.remove('noimg');
+      if(ch) ch.textContent = '微信 · 扫一扫 · 可留言';
+    };
+    probe.onerror = tryNext;
+    probe.src = url;
+  };
+  tryNext();
+}
 /* —— 提醒设置：改动检测 / Toast / 桌面通知授权 —— */
 function serializeAlertForm(){
   var ov = {};
@@ -4334,15 +4577,17 @@ refreshAll();
 })();
 
 /* ============== 防篡改自检 ==============
-   别人 fork 后若把打赏入口删掉、或把收款码(donate.png)换成他自己的，这里会当场暴露。
-   注：前端无法真正阻止改名覆盖文件，但「改动代码/移除入口」会被检测并提示使用者。 */
+   别人 fork 后若把打赏入口删掉、或移除赞赏码远程加载逻辑（想换成自己的收款码），这里会当场暴露。
+   赞赏码本体不打包在扩展内（运行时从官网拉取），换本地图片无效。
+   注：前端无法真正阻止删改代码，但「移除入口/移除远程加载」会被检测并提示使用者。 */
 (function integrityCheck(){
   try{
     var bad = [];
     if(!document.querySelector('[data-act="openDonate"]')) bad.push('打赏按钮');
     var m = document.getElementById('maskDonate');
     if(!m){ bad.push('打赏弹窗'); }
-    else if(m.innerHTML.indexOf('donate.png') < 0){ bad.push('收款码引用'); }
+    else if(!m.querySelector('#donateQrImg')){ bad.push('收款码容器'); }
+    if(!window.DONATE_QR_URLS || window.DONATE_QR_URLS.join('|').indexOf('beiyucloud.pages.dev/donate.png') < 0){ bad.push('收款码官方源'); }
     if(bad.length){
       console.warn('[看板] 检测到以下结构被非官方改动：' + bad.join('、'));
       var btn = document.querySelector('[data-act="openDonate"]');
