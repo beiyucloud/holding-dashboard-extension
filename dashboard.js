@@ -1615,12 +1615,17 @@ async function refreshAll(){
   }
   renderIndices(tq, gold);
 
-  /* 2.45 汇率（仅当有港美股持仓时才请求，省一次接口；失败静默，用缓存/兜底继续） */
+  /* 2.45 汇率（失败静默，用缓存/兜底继续）
+     v162：不再只在有港美股持仓时才请求——原先无外币持仓就永远不发请求，
+     于是「提醒设置 → 汇率折算」的实时提示会长期显示兜底常数，被误认为真实汇率。
+     现在：有外币持仓 → 每次都拉；无外币持仓 → 仅当本地无缓存或缓存超 24h 时补拉一次。
+     v163：取数通道由东财 push2 ulist.np 换成腾讯 fxUSDCNY/fxHKDCNY——前者已被服务端
+     掐断（实测只返回空响应），这才是「永远显示兜底值」的真因；详见 fetchFxRates 上方注释。 */
   var _hasForeign = false;
   for(var _fi = 0; _fi < stocks.length; _fi++){
     if(curOfStock(stocks[_fi].code) !== 'CNY'){ _hasForeign = true; break; }
   }
-  if(_hasForeign){ try{ await fetchFxRates(); }catch(e){} }
+  if(_hasForeign || fxStale('USD') || fxStale('HKD')){ try{ await fetchFxRates(); }catch(e){} }
 
   /* 2.5 股票行情（腾讯，真实成交价） */
   if(stocks.length){
@@ -2689,7 +2694,12 @@ var stockInfo = {}; /* code -> {name, price, prevClose, pct} */
    行内「现价 / 成本价」仍按原币显示并加币种前缀，「市值」列给人民币折算值 + 原币小字。
    注：涨跌幅、持仓收益率是比率，与币种无关，不折算。 */
 var FX_KEY = 'fund_board_fx_v1';
-var FX_FALLBACK = {USD: 7.1, HKD: 0.91};   /* 仅「首启且联网失败」时兜底，会被真实汇率覆盖 */
+/* v162 兜底常数：仅在「本地无缓存 + 联网失败」时使用（v163 起腾讯/东财两路都失败才算）。
+   ⚠️ 必须按当时的真实汇率校准，不要沿用旧值——旧值 {USD:7.1, HKD:0.91} 是更早的量级，
+   2026-09-21 实际约 {USD:6.69, HKD:0.853}，旧兜底偏高约 6%，会被误当成真实汇率。 */
+var FX_FALLBACK = {USD: 6.70, HKD: 0.855};
+var FX_FRESH_MS = 24 * 60 * 60 * 1000;      /* 24h 内算「实时」 */
+var FX_MAX_MS   = 7 * 24 * 60 * 60 * 1000;  /* 超过 7 天不再采信，退回兜底（并标注） */
 var fxRates = (function(){
   try{ var o = JSON.parse(localStorage.getItem(FX_KEY)); if(o && typeof o === 'object') return o; }catch(e){}
   return {};
@@ -2742,26 +2752,66 @@ function setCcyHint(opt, code){
     }
   }
 }
-/* 折算率优先级：用户手填 > 实时/缓存汇率 > 兜底常数 */
+/* 折算率优先级：用户手填 > 实时/缓存汇率（7 天内有效）> 兜底常数 */
 function fxOf(currency){
   if(!currency || currency === 'CNY') return 1;
   var ov = parseFloat(alerts.settings && alerts.settings['fx' + currency]);
   if(isFinite(ov) && ov > 0) return ov;
   var r = fxRates[currency];
-  if(r && isFinite(r.rate) && r.rate > 0) return r.rate;
+  if(r && isFinite(r.rate) && r.rate > 0 && (Date.now() - (r.at || 0)) < FX_MAX_MS) return r.rate;
   return FX_FALLBACK[currency] || 1;
 }
-/* 汇率来源（页面脚注展示用）：手动 / 实时 / 兜底 */
+/* 本地缓存是否「不新鲜」：无缓存 / 已超 24h（含被判定为过期不可用的）。
+   v162 用于两步：① 决定是否补拉汇率 ② 脚注 / 设置面板里如实标注来源。 */
+function fxStale(currency){
+  var r = fxRates[currency];
+  if(!r || !isFinite(r.rate) || r.rate <= 0) return true;
+  return (Date.now() - (r.at || 0)) >= FX_FRESH_MS;
+}
+/* 汇率来源（页面脚注 / 设置面板展示用）：手动 / 实时 / 缓存 N 小时前 / 离线估值。
+   v162 起不再把过期缓存和兜底常数都笼统叫「实时 / 兜底」，避免 7.1 被当成真实汇率。 */
 function fxSrcOf(currency){
   var ov = parseFloat(alerts.settings && alerts.settings['fx' + currency]);
   if(isFinite(ov) && ov > 0) return '手动';
   var r = fxRates[currency];
-  if(r && isFinite(r.rate) && r.rate > 0) return '实时';
-  return '兜底';
+  if(r && isFinite(r.rate) && r.rate > 0){
+    var age = Date.now() - (r.at || 0);
+    if(age < FX_MAX_MS){
+      if(age < FX_FRESH_MS) return '实时';
+      return '缓存 ' + Math.max(1, Math.round(age / 3600000)) + ' 小时前';
+    }
+  }
+  return '离线估值';
 }
-/* 拉 USDCNH / HKDCNH（东财 push2，一次请求两只离岸人民币汇率）。
-   成功写 localStorage 缓存；失败静默返回 false（调用方用缓存/兜底继续算，不阻断刷新） */
-function fetchFxRates(){
+/* ---- v163 实时汇率取数：腾讯为主，东财为辅 ----
+   真因（2026-09-21 实测）：东财 push2 的 /api/qt/ulist.np/get 与 /api/qt/stock/get 已被服务端
+   直接掐断——curl 返回 `(56) Failure when receiving data from the peer`（schannel: server closed
+   abruptly），而同一主机的 /api/qt/clist/get 却正常 200。即接口本身不可用，扩展永远拿不到实时
+   值，只能退回兜底常数——这才是 v1.1.2 长期显示 7.1 的真因（常数偏高只是让它更刺眼）。
+   改为腾讯外汇行情（与股票行情同一条已长期验证可用的通道）：
+     https://qt.gtimg.cn/q=fxUSDCNY,fxHKDCNY
+     → v_fxUSDCNY="310~美元人民币~USDCNY~6.6952~0~20260921203753~6.6970~...";
+   按 ~ 切分取 [3] = 最新价（注意 [4] 对汇率恒为 0，与股票「昨收」不同位，不能复用股票解析）。
+   腾讯失败再试东财（部分网络未被掐断）；两路都失败才用本地缓存 / 兜底常数。
+   成功即写 localStorage 缓存。整体失败静默返回 false（调用方用缓存/兜底继续算，不阻断刷新）。 */
+function _fxFromTencent(){
+  var url = 'https://qt.gtimg.cn/q=fxUSDCNY,fxHKDCNY';
+  return fetch(url, {credentials: 'omit'}).then(function(r){ return r.arrayBuffer(); }).then(function(buf){
+    var txt = new TextDecoder('gbk').decode(buf);
+    var at = Date.now(), got = false;
+    [['USDCNY', 'USD'], ['HKDCNY', 'HKD']].forEach(function(pr){
+      var m = txt.match(new RegExp('v_fx' + pr[0] + '="([^"]*)"'));
+      if(!m) return;
+      var r = parseFloat(m[1].split('~')[3]);
+      if(isFinite(r) && r > 0){ fxRates[pr[1]] = {rate: r, at: at}; got = true; }
+    });
+    if(got) saveFxRates();
+    return got;
+  }).catch(function(){ return false; });
+}
+/* 备用源：东财 push2 ulist.np（离岸 USDCNH / HKDCNH）。该接口在部分网络被服务端掐断，
+   故只作兜底，不再当主通道。 */
+function _fxFromEm(){
   return jsonp('https://push2.eastmoney.com/api/qt/ulist.np/get',
                {fltt:2, invt:2, fields:'f2,f12,f14', secids:'133.USDCNH,133.HKDCNH'})
     .then(function(res){
@@ -2777,6 +2827,9 @@ function fetchFxRates(){
       return got;
     })
     .catch(function(){ return false; });
+}
+function fetchFxRates(){
+  return _fxFromTencent().then(function(ok){ return ok ? true : _fxFromEm(); });
 }
 
 /* 规范股票/场内基金代码：自动补 sh/sz 前缀。支持 ETF/LOF/可转债/REITs 等场内品种
