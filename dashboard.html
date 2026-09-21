@@ -4,6 +4,7 @@
 <meta charset="UTF-8" data-page-node-id="u7le2CPik0vi8FHwMarO3v">
 <meta name="viewport" content="width=device-width, initial-scale=1.0" data-page-node-id="J1cxQGtDECTbQVgmLuwWkX">
 <title>持仓实时盈亏看板</title>
+<script src="./privacy-boot.js"></script>
 <script src="./echarts.min.js"></script>
 <style>
   :root{
@@ -85,11 +86,29 @@
   .label-flex .ts{font-size:11px;color:var(--muted);font-weight:400;}
   .fold-btn{font-size:11px;padding:3px 9px;line-height:1.2;border-radius:5px;}
   .pnl-split{margin-top:8px;display:flex;flex-direction:column;gap:4px;font-size:12px;}
-  .pnl-row{display:flex;align-items:center;gap:6px;color:var(--muted);font-variant-numeric:tabular-nums;}
-  .pnl-row .dot{width:7px;height:7px;border-radius:50%;flex:none;}
+  .pnl-row{display:flex;align-items:center;justify-content:flex-end;color:var(--muted);font-variant-numeric:tabular-nums;}
+  .pnl-row .dot{width:7px;height:7px;border-radius:50%;flex:none;margin-right:6px;}
   .pnl-row .dot.f{background:#4f8cff;}
   .pnl-row .dot.s{background:#e8a13a;}
-  .pnl-row .val{font-weight:700;margin-left:auto;}
+  .pnl-row .val{font-weight:700;margin-left:14px;min-width:72px;text-align:right;}
+
+  /* v1.1.2 隐私打码：眼睛切换（持仓市值/今日盈亏卡金额遮罩） */
+  .privacy-btn{flex:none;width:26px;height:26px;padding:0;border:none;background:transparent;color:var(--muted);cursor:pointer;border-radius:6px;display:inline-flex;align-items:center;justify-content:center;}
+  .label-flex .privacy-btn{align-self:center;}
+  .privacy-btn:hover{background:rgba(128,128,128,.14);}
+  .privacy-btn svg{width:16px;height:16px;fill:currentColor;}
+  .privacy-btn .ic-eye-off{display:none;}
+  .privacy-btn.is-off .ic-eye{display:none;}
+  .privacy-btn.is-off .ic-eye-off{display:inline;}
+  body.privacy-on #pnlTop .pnl-sum-cell .v,
+  body.privacy-on #pnlTop .pnl-mini{filter:blur(8px);}
+  .pv-muted{color:var(--muted)!important;}
+  /* 启动前置态：dashboard.js 就绪前（首帧）也不留明文/睁眼图标 */
+  html.pv-boot #totalMv, html.pv-boot #estDelta, html.pv-boot #realMv, html.pv-boot #estMv,
+  html.pv-boot #cumVal, html.pv-boot #cumPct, html.pv-boot #cumRealized,
+  html.pv-boot #todayPnl, html.pv-boot #pnlFund, html.pv-boot #pnlStock{filter:blur(8px);}
+  html.pv-boot .privacy-btn .ic-eye{display:none;}
+  html.pv-boot .privacy-btn .ic-eye-off{display:inline;}
 
   /* 今日/昨日盈亏卡：近5日盈亏迷你柱状图（v138） */
   .pnl-top{margin-top:10px;padding-top:8px;border-top:1px dashed var(--border);display:flex;flex-direction:column;gap:4px;}
@@ -490,6 +509,10 @@
   .stk-type-hint.ok{color:var(--green);}
   .stk-type-hint.ok b{color:#7fb0ff;font-weight:600;}
   .stk-type-hint.bad{color:#e8a13a;}
+  /* v159 币种口径提示：港美股成本价 / 成交价按原币填写 */
+  .ccy-hint{font-size:11px;line-height:1.45;color:var(--muted);margin:6px 0 0 74px;}
+  /* 带币种单位的标签（成本价（港元））比默认 64px 宽，改为自适应避免压住输入框 */
+  .field .lab.ccy-lab{width:auto;min-width:64px;}
   /* 统一添加弹窗：识别结果区（名字醒目、降噪） */
   .add-ident{min-height:24px;margin:-4px 0 12px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;font-size:12px;}
   .add-ident .ident-loading{color:var(--muted);}
@@ -658,7 +681,7 @@
 <!-- 第一行：总览 -->
 <div class="row1" data-page-node-id="PI3EgJBsqWQLKICcBuOwmS">
   <div class="card" data-page-node-id="BtGnhKMNbZ3aRsWEwGl6YE">
-    <div class="label" data-page-node-id="C6pQEnAUprN0pGHyUMBOYw">持仓市值（元）</div>
+    <div class="label label-flex" data-page-node-id="C6pQEnAUprN0pGHyUMBOYw"><span>持仓市值（元）</span><button class="privacy-btn" id="privacyBtn" data-act="togglePrivacy" title="隐藏金额" type="button"><svg class="ic-eye" viewBox="0 0 24 24"><path d="M12 4.5C7.14 4.5 2.84 7.6 1 12c1.84 4.4 6.14 7.5 11 7.5s9.16-3.1 11-7.5c-1.84-4.4-6.14-7.5-11-7.5zm0 12.5a5 5 0 1 1 0-10 5 5 0 0 1 0 10zm0-8a3 3 0 1 0 0 6 3 3 0 0 0 0-6z"/></svg><svg class="ic-eye-off" viewBox="0 0 24 24"><path d="M12 6.5a9.77 9.77 0 0 1 8.66 5.04 9.9 9.9 0 0 1-2.41 2.95l1.5 1.5A11.8 11.8 0 0 0 23 11.54c-1.84-4.4-6.14-7.5-11-7.5-1.22 0-2.4.18-3.51.51l1.87 1.87c.54-.08 1.09-.12 1.64-.12zM2.01 3.05 1 4.06l2.6 2.6A11.7 11.7 0 0 0 1 11.54c1.84 4.4 6.14 7.5 11 7.5 1.46 0 2.87-.26 4.18-.72l3.76 3.76 1.06-1.01L2.01 3.05zm7.49 9.19 2.26 2.26a2.5 2.5 0 0 1-2.26-2.26zm2.5-4.24 2.59 2.59a2.5 2.5 0 0 1-2.59-2.59z"/></svg></button></div>
     <div class="mv-box" data-page-node-id="h257mVjIoy65DfIBcvhbJJ">
       <div class="mv-icon" data-page-node-id="kZEGOVjHsbXro3oAW0PU0y">¥</div>
       <div class="mv-content" data-page-node-id="e4VzfAF4NoswJ4N6M9g2FI">
@@ -803,19 +826,20 @@
 
 <!-- 股票持仓 -->
 <div id="stockSection" style="margin-bottom:14px" data-page-node-id="VAtanBLaf9PY2HubWpeipJ">
-<div class="sec-title" data-page-node-id="Dvm5PxS0bePL5Djo11k8Ij">我的股票<small data-page-node-id="T3Bc9ylYEjvLwmHiYZcRB0">实时行情为真实成交价（无估算偏差）；支持 A股6位 / 港股 00000.HK / 美股 AAPL（自动识别）</small></div>
+<div class="sec-title" data-page-node-id="Dvm5PxS0bePL5Djo11k8Ij">我的股票<small data-page-node-id="T3Bc9ylYEjvLwmHiYZcRB0">实时行情为真实成交价（无估算偏差）；支持 A股6位 / 港股 00000.HK / 美股 AAPL（自动识别）；美股/港股按实时汇率折算为人民币计入总市值</small></div>
 <div id="stockTableWrap" class="card table-wrap" data-page-node-id="4CmiDcIUHUNoJlatDbAm3A">
   <table data-page-node-id="6lGTWaFnI51MSX1CwpJ4P7">
     <thead data-page-node-id="DjhDKUfGsvSDbCkCoWEflB"><tr data-page-node-id="DkPHCLjo2aWL5RdTfKFMEg"><th data-page-node-id="XiU6rS29ayJu3kaLpLwgSi">名称</th><th data-page-node-id="FErOxiyNyKfka51AnCYmKW">类型</th><th data-page-node-id="iUGIxK4FzD1B6kruwL6rDK">代码</th><th data-page-node-id="4OWvG2VRoJX9NQLEyGOEy8">现价</th><th data-page-node-id="2lo1sJlqyEUgmyCXpxMkLG">市值(元)</th><th data-page-node-id="owpgtrEi4c96pVyvsSeL7l">持仓股数</th><th data-page-node-id="JCChJRZhlAQM0xLRf6unO8">成本价</th><th data-page-node-id="A4xXRuuNwtua0onHHY933u">涨跌幅</th><th data-page-node-id="UJodEGQqHGW0Bd6CGrgdEe">今日盈亏(元)</th><th data-page-node-id="KwQzDqhAFbLduNuajHGiNz">持仓收益率</th><th data-page-node-id="lw8kZr8tB9KxSssfT0DvPO">累计盈亏(元)</th><th data-page-node-id="Qt0ah9KL6hlZ6IeEhdpUsN">已实现(元)</th><th data-page-node-id="NuimCOvb8xOzQTfLLNp7rA">操作</th></tr></thead>
     <tbody id="stockBody" data-page-node-id="YTETNLCBmeEqgPDzbMzEkC"></tbody>
   </table>
 </div>
+<div id="fxNote" class="muted" style="display:none;margin-top:8px;font-size:12px;line-height:1.7" data-page-node-id="fxNoteV156"></div>
 </div>
 
 <div class="footer" data-page-node-id="5mzn8eeIKhJiHZZYyCZBUS">
-  <div data-page-node-id="zUp8qF5bZSbN5uoUBsDvh0">看板版本 v152（2026-09-10）· 数据通道：<span id="srcStatus" data-page-node-id="z1wYSVq2SDR3rGEc2DuS8q">检测中…</span>（若有 ✗ 请刷新重试）· <a href="https://beiyucloud.taoxinyuan.com" target="_blank" rel="noopener noreferrer" style="color:var(--blue);text-decoration:none" data-page-node-id="DdTbDsjtUyJZgVdPL14zdg">持仓实时盈亏看板</a> · <a href="privacy.html" target="_blank" rel="noopener noreferrer" style="color:var(--blue);text-decoration:none\" data-page-node-id="FefdJe82QUh4pQusOzTsHG">隐私政策</a></div>
-  数据来源：新浪财经（盘中实时估算）· 天天基金移动端接口（净值/重仓股）· 腾讯行情（指数）· 东方财富（个股实时行情 / 涨跌家数 / 行业板块 / 国际金价）。<br data-page-node-id="PZMJhv4er1FN8SaVQfTn8n">
-  计算口径：填份额时 今日盈亏 = 份额 ×（估算净值 − 昨日净值）（盘中/盘后显示实时估算）；持有收益率 = 已结算市值 ÷（份额 × 成本价）− 1，净值未公布时沿用上一交易日确认净值、不随盘中估值跳动，净值公布后自动更新；未填份额时按「持有市值 × 估算涨幅」近似。<br data-page-node-id="nmwS0MHOUCZIY8BU70uad3">
+  <div data-page-node-id="zUp8qF5bZSbN5uoUBsDvh0">看板版本 v160（2026-09-21）· 数据通道：<span id="srcStatus" data-page-node-id="z1wYSVq2SDR3rGEc2DuS8q">检测中…</span>（若有 ✗ 请刷新重试）· <a href="https://beiyucloud.taoxinyuan.com" target="_blank" rel="noopener noreferrer" style="color:var(--blue);text-decoration:none" data-page-node-id="DdTbDsjtUyJZgVdPL14zdg">持仓实时盈亏看板</a> · <a href="privacy.html" target="_blank" rel="noopener noreferrer" style="color:var(--blue);text-decoration:none" data-page-node-id="FefdJe82QUh4pQusOzTsHG">隐私政策</a></div>
+  数据来源：新浪财经（盘中实时估算）· 天天基金移动端接口（净值/重仓股）· 腾讯行情（指数）· 东方财富（个股实时行情 / 涨跌家数 / 行业板块 / 国际金价 / 离岸人民币汇率）。<br data-page-node-id="PZMJhv4er1FN8SaVQfTn8n">
+  计算口径：美股 / 港股按实时汇率折算为人民币后计入总市值与盈亏（可在「提醒设置 → 汇率折算」手填覆盖）；录入口径：成本价与加仓 / 减仓成交价一律按原币填写（港股港元 HK$、美股美元 $），不要换算成人民币填；填份额时 今日盈亏 = 份额 ×（估算净值 − 昨日净值）（盘中/盘后显示实时估算）；持有收益率 = 已结算市值 ÷（份额 × 成本价）− 1，净值未公布时沿用上一交易日确认净值、不随盘中估值跳动，净值公布后自动更新；未填份额时按「持有市值 × 估算涨幅」近似。<br data-page-node-id="nmwS0MHOUCZIY8BU70uad3">
   「实时估算」为新浪基于基金前十大重仓股/债券/ETF 的加权估算（分钟级）；「重仓估算」为本页按前十大重仓股实时行情的自建兜底估算。估算均基于上季持仓，与实际净值有偏差，仅供参考。<br data-page-node-id="CDL3UwBopiRFtyToi6tonR">
   本看板仅为信息整理工具，不构成投资建议。市场有风险，投资需谨慎。
 </div>
@@ -963,11 +987,12 @@
         </div>
       </div>
       <div class="fg" data-page-node-id="lmUG9zr3DdG07ydzOQ76rZ">
-        <div class="fg-h" data-page-node-id="iEe2FWNEZ7TFi7ee6ueHVs">成本</div>
+        <div class="fg-h" id="addStkCostHead" data-page-node-id="iEe2FWNEZ7TFi7ee6ueHVs">成本</div>
         <div class="field" data-page-node-id="Rx3FOp8OQ9XVHT5LsfHAf0">
-          <label class="lab" for="inAddStkCost" data-page-node-id="cqD5C5T9XbSDOPj3Ww4Yj0">成本价</label>
+          <label class="lab" for="inAddStkCost" id="inAddStkCostLab" data-page-node-id="cqD5C5T9XbSDOPj3Ww4Yj0">成本价</label>
           <input id="inAddStkCost" placeholder="选填，如 1680.500" type="number" step="0.001" data-page-node-id="ovtspKmb4jX179flQiT124">
         </div>
+        <div class="ccy-hint" id="addStkCostTip" style="display:none" data-page-node-id="ccyHintAddV159"></div>
       </div>
     </div>
     <div class="ops" data-page-node-id="Jg1J9dG3x8akoED58LzjpG">
@@ -981,7 +1006,7 @@
 <div class="mask" id="maskStock" data-page-node-id="zqobqWepesfV4A79ugNT87">
   <div class="modal" data-page-node-id="cfcScbdk6qLOukhSoSPZSf">
     <h3 id="stkModalTitle" data-page-node-id="YcvrMSH7u73pYmKIHSlGNB">添加股票 / 场内基金</h3>
-    <div class="tip" data-page-node-id="KyBQ3Avz45yYx2NGWFqtv5">输入 6 位代码自动识别品种（股票 / ETF / LOF / 可转债 / REITs 等场内品种均可）。<br data-page-node-id="OCApgLBCVVQbGx3mVsI1iw">市值 / 盈亏按实时成交价计算，无估算偏差。</div>
+    <div class="tip" data-page-node-id="KyBQ3Avz45yYx2NGWFqtv5">输入 6 位代码自动识别品种（股票 / ETF / LOF / 可转债 / REITs 等场内品种均可）。<br data-page-node-id="OCApgLBCVVQbGx3mVsI1iw">市值 / 盈亏按实时成交价计算，无估算偏差。<br data-page-node-id="fxTipV156">美股（AAPL）成本单价按美元填、港股（00000.HK）按港币填，看板自动按实时汇率折算成人民币计入总市值。</div>
     <div class="field" data-page-node-id="HLyI3F4MDR7iOL2gnt6a8E">
       <label data-page-node-id="HPfyjKMob4ddRNbBuLmBho">代码</label>
       <input id="inStkCode" placeholder="如 600519 / 510300（沪深300ETF）" maxlength="8" data-page-node-id="IGyN9Xc3surM5CKKyH5yDX">
@@ -1006,7 +1031,7 @@
       <input id="inStkShares" placeholder="如 1000" type="number" data-page-node-id="LhTDyHDIL7dmFh0b935fNu">
     </div>
     <div class="field" data-page-node-id="m377OIVoDhfjWgNAC4Oiy0">
-      <label data-page-node-id="gb9lFGuESbamK1nEULTkgP">成本价（元，选填）</label>
+      <label for="inStkCost" id="inStkCostLab" data-page-node-id="gb9lFGuESbamK1nEULTkgP">成本价（元）</label>
       <input id="inStkCost" placeholder="如 1680.500" type="number" step="0.001" data-page-node-id="RvtViA3NMG0UlBTF3msaZM">
     </div>
     <!-- 已实现盈亏 / 操作次数（仅编辑已有持仓时显示；可一键清零测试残留） -->
@@ -1047,7 +1072,7 @@
       <input id="tradeShares" placeholder="如 1000" type="number" min="1" step="1" data-evt="input" data-fns="calcTradeFee" data-page-node-id="FpeIAEZHcamWq4uqG21BhD">
     </div>
     <div class="field" id="tradePriceRow" data-page-node-id="NBnp2tE96tSrdEnte3RYJs">
-      <label data-page-node-id="pLMBoCQgW68Q7u2KjQ7jH0">成交价格（元）</label>
+      <label for="tradePrice" id="tradePriceLab" data-page-node-id="pLMBoCQgW68Q7u2KjQ7jH0">成交价格（元）</label>
       <input id="tradePrice" placeholder="如 1.2350" type="number" min="0.0001" step="0.0001" data-evt="input" data-fns="calcTradeFee" data-page-node-id="9TfWEWtMGtYyavauaoMRfC">
     </div>
     <div class="tip" id="tradeRangeTip" style="display:none" data-page-node-id="PmFtMrJLAHmATAu7KhGycW"></div>
@@ -1096,6 +1121,14 @@
           <option value="0" data-page-node-id="5tuCXAhNyExjFdRDEVDhsM">关闭</option><option value="1" data-page-node-id="fUW3quQtSCyihzCCICu8AZ">每 1 分钟</option>
           <option value="3" data-page-node-id="n2trA8BYNBk6ppSerLhSOt">每 3 分钟</option><option value="5" data-page-node-id="uvjpGjVT4hEvJP1s2TPXCV">每 5 分钟</option>
         </select></div>
+    </div>
+
+    <!-- v156 汇率折算（美股/港股 → 人民币）：留空 = 自动获取实时汇率 -->
+    <div class="alert-chks alert-inline" data-page-node-id="fxRowV156">
+      <span class="lab" data-page-node-id="fxLabV156">汇率折算</span>
+      <div class="g-item" title="留空 = 自动获取实时汇率；填了就按你填的算" data-page-node-id="fxUsdV156"><span class="lab" data-page-node-id="fxUsdLabV156">USD/CNY</span><input type="number" id="setFxUSD" step="0.0001" min="0" placeholder="自动" data-evt="input" data-fns="onAlertChange" data-page-node-id="setFxUSDV156"><span data-page-node-id="fxUsdUnitV156">元</span></div>
+      <div class="g-item" title="留空 = 自动获取实时汇率；填了就按你填的算" data-page-node-id="fxHkdV156"><span class="lab" data-page-node-id="fxHkdLabV156">HKD/CNY</span><input type="number" id="setFxHKD" step="0.0001" min="0" placeholder="自动" data-evt="input" data-fns="onAlertChange" data-page-node-id="setFxHKDV156"><span data-page-node-id="fxHkdUnitV156">元</span></div>
+      <span class="hint" id="fxLiveHint" style="font-size:11px" data-page-node-id="fxLiveHintV156"></span>
     </div>
 
     <!-- 交易成本已迁到加减仓弹窗（折叠面板），不在提醒设置里 -->

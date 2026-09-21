@@ -1615,6 +1615,13 @@ async function refreshAll(){
   }
   renderIndices(tq, gold);
 
+  /* 2.45 汇率（仅当有港美股持仓时才请求，省一次接口；失败静默，用缓存/兜底继续） */
+  var _hasForeign = false;
+  for(var _fi = 0; _fi < stocks.length; _fi++){
+    if(curOfStock(stocks[_fi].code) !== 'CNY'){ _hasForeign = true; break; }
+  }
+  if(_hasForeign){ try{ await fetchFxRates(); }catch(e){} }
+
   /* 2.5 股票行情（腾讯，真实成交价） */
   if(stocks.length){
     try{
@@ -1635,6 +1642,7 @@ async function refreshAll(){
   }
   var sRes = renderStocks();
   var summ = updateSummary(sum, sRes);
+  applyPrivacyMask(); /* v1.1.2 隐私打码：金额刚写入就遮罩，不等后面 chart 的 await（否则等待期会露出真实数字） */
   marketStatus(sum.navTime);  /* 用本次拉到的"今日 NAV 发布时间"刷新顶部状态，覆盖"待净值公布"的永远待 */
 
   /* 3. 涨跌家数：沪(1.000001)+深(0.399001)+京(0.899050) 三市全量
@@ -1772,6 +1780,7 @@ async function refreshAll(){
     if(_rBtn){ _rBtn.disabled = false; _rBtn.innerHTML = _rBtnHtml || '<svg viewBox="0 0 24 24" style="width:16px;height:16px;fill:currentColor"><path d="M17.65 6.35C16.2 4.9 14.21 4 12 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08c-.82 2.33-3.04 4-5.65 4-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"/></svg>'; }
     applyAllCardFold();
     setTimeout(fitBkHeight, 0);
+    applyPrivacyMask(); /* v1.1.2 隐私打码：刷新重写数值后重新遮罩 */
   }
 }
 
@@ -2131,7 +2140,10 @@ function openTrade(kind, code, dir){
     ? (stockInfo[h.code] && stockInfo[h.code].name)
     : (fundInfo[h.code] && fundInfo[h.code].name)) || h.code;
   $('#tradeTitleText').textContent = (dir === 'add' ? '加仓 ' : '减仓 ') + nm;
-  $('#tradeCur').textContent = '当前份额 ' + (h.shares || 0) + ' · 当前均价 ' + (h.cost != null ? h.cost : '--');
+  $('#tradeCur').textContent = '当前份额 ' + (h.shares || 0) + ' · 当前均价 '
+    + (h.cost != null ? (curSym(curOfStock(h.code)) || '') + h.cost : '--');
+  /* v159 成交价币种提示：港股→港元 / 美股→美元 / 其余→元 */
+  setCcyHint({lab:'tradePriceLab', baseLab:'成交价格', inp:'tradePrice'}, kind === 'stock' ? h.code : '');
   $('#tradeShares').value = ''; $('#tradeAmount').value = ''; $('#tradePrice').value = ''; $('#tradeFee').value = '';
 
   var isFund = (kind === 'fund');
@@ -2669,6 +2681,103 @@ function saveStocks(){ try{ localStorage.setItem(STK_KEY, JSON.stringify(stocks)
 })();
 var stockInfo = {}; /* code -> {name, price, prevClose, pct} */
 
+/* ================= 汇率折算（v156：美股 USD / 港股 HKD → 人民币） =================
+   BUG 背景：腾讯 usAAPL 返回美元价、hk00700 返回港币价，此前 mv = 股数 × 现价 直接并进
+   「元」合计，等于把美元数额按人民币入账，总市值被系统性放大（1 美元 ≈ 7 元）。
+   口径：外币持仓先按实时汇率折成人民币，再计入 总市值 / 今日盈亏 / 累计盈亏 / 已实现；
+   行内「现价 / 成本价」仍按原币显示并加币种前缀，「市值」列给人民币折算值 + 原币小字。
+   注：涨跌幅、持仓收益率是比率，与币种无关，不折算。 */
+var FX_KEY = 'fund_board_fx_v1';
+var FX_FALLBACK = {USD: 7.1, HKD: 0.91};   /* 仅「首启且联网失败」时兜底，会被真实汇率覆盖 */
+var fxRates = (function(){
+  try{ var o = JSON.parse(localStorage.getItem(FX_KEY)); if(o && typeof o === 'object') return o; }catch(e){}
+  return {};
+})();
+function saveFxRates(){ try{ localStorage.setItem(FX_KEY, JSON.stringify(fxRates)); }catch(e){} }
+/* 币种判定：us* → USD；hk* → HKD；其余（A股 / 北交所 / 场内基金等）→ CNY */
+function curOfStock(code){
+  var nc = (code || '').toLowerCase();
+  if(/^us/.test(nc)) return 'USD';
+  if(/^hk/.test(nc)) return 'HKD';
+  return 'CNY';
+}
+function curSym(currency){ return currency === 'USD' ? '$' : (currency === 'HKD' ? 'HK$' : ''); }
+/* v159 币种口径提示：港股 / 美股的成本价与成交价都按「原币」填写（HK$ / $），
+   A股与场内基金按人民币。三处弹窗共用，避免「填了美元却按元理解」的口径错位。
+   判定只看代码前缀（hk* / us*），与折算口径 curOfStock 完全一致。 */
+function ccyUnitOf(code){
+  var cur = curOfStock(code);
+  if(cur === 'HKD') return {cur:'HKD', unit:'港元', sym:'HK$', ph:'如 600.500'};
+  if(cur === 'USD') return {cur:'USD', unit:'美元', sym:'$',   ph:'如 200.000'};
+  return {cur:'CNY', unit:'元', sym:'', ph:'如 1680.500'};
+}
+/* id 归一化：调用方传 'inAddStkCostLab' 或 '#inAddStkCostLab' 都能取到元素。
+   漏 '#' 会被当成标签名选择器 → querySelector 返回 null → 静默不生效（v159 踩过）。 */
+function _ccySel(id){ return '#' + String(id || '').replace(/^#/, ''); }
+function setCcyHint(opt, code){
+  var m = ccyUnitOf(code), fx = (m.cur !== 'CNY');
+  if(opt.head){
+    var h = $(_ccySel(opt.head));
+    /* 标题始终带单位（成本（元）/ 成本（港元）/ 成本（美元）），保持三档对称 */
+    if(h) h.textContent = (opt.headBase || '') + '（' + m.unit + '）';
+  }
+  if(opt.lab){
+    var l = $(_ccySel(opt.lab));
+    if(l){
+      /* 「选填」由 placeholder 承载，标签只标币种单位 */
+      l.textContent = (opt.baseLab || '') + '（' + m.unit + '）';
+      l.classList.toggle('ccy-lab', fx);   /* 外币时放宽标签宽度（.lab 默认固定 64px） */
+    }
+  }
+  if(opt.inp){
+    var i = $(_ccySel(opt.inp));
+    if(i) i.placeholder = (opt.opt ? '选填，' : '') + m.ph;
+  }
+  if(opt.tip){
+    var t = $(_ccySel(opt.tip));
+    if(t){
+      t.style.display = fx ? '' : 'none';
+      if(fx) t.textContent = '按' + m.unit + '填写（' + m.sym + '），看板会按实时汇率折算成人民币计入总市值。';
+    }
+  }
+}
+/* 折算率优先级：用户手填 > 实时/缓存汇率 > 兜底常数 */
+function fxOf(currency){
+  if(!currency || currency === 'CNY') return 1;
+  var ov = parseFloat(alerts.settings && alerts.settings['fx' + currency]);
+  if(isFinite(ov) && ov > 0) return ov;
+  var r = fxRates[currency];
+  if(r && isFinite(r.rate) && r.rate > 0) return r.rate;
+  return FX_FALLBACK[currency] || 1;
+}
+/* 汇率来源（页面脚注展示用）：手动 / 实时 / 兜底 */
+function fxSrcOf(currency){
+  var ov = parseFloat(alerts.settings && alerts.settings['fx' + currency]);
+  if(isFinite(ov) && ov > 0) return '手动';
+  var r = fxRates[currency];
+  if(r && isFinite(r.rate) && r.rate > 0) return '实时';
+  return '兜底';
+}
+/* 拉 USDCNH / HKDCNH（东财 push2，一次请求两只离岸人民币汇率）。
+   成功写 localStorage 缓存；失败静默返回 false（调用方用缓存/兜底继续算，不阻断刷新） */
+function fetchFxRates(){
+  return jsonp('https://push2.eastmoney.com/api/qt/ulist.np/get',
+               {fltt:2, invt:2, fields:'f2,f12,f14', secids:'133.USDCNH,133.HKDCNH'})
+    .then(function(res){
+      var diff = res && res.data && res.data.diff;
+      if(!Array.isArray(diff)) return false;
+      var at = Date.now(), got = false;
+      diff.forEach(function(it){
+        var ccy = (it.f12 === 'USDCNH') ? 'USD' : (it.f12 === 'HKDCNH' ? 'HKD' : null);
+        var r = parseFloat(it.f2);
+        if(ccy && isFinite(r) && r > 0){ fxRates[ccy] = {rate: r, at: at}; got = true; }
+      });
+      if(got) saveFxRates();
+      return got;
+    })
+    .catch(function(){ return false; });
+}
+
 /* 规范股票/场内基金代码：自动补 sh/sz 前缀。支持 ETF/LOF/可转债/REITs 等场内品种
    交易所映射（按前两位细分，因 1 开头既可能是沪市可转债 11，也可能是深市基金 15/16/18）：
      沪市 sh：6 股票 / 5 基金(ETF·LOF·REITs) / 9 B股 / 11 可转债
@@ -2756,6 +2865,7 @@ function stockLotUnit(code){
 
 function renderStocks(){
   var html = '', totMv = 0, totPnl = 0, totPrev = 0, totCum = 0, totCost = 0, totRealized = 0, hasCost = false, hasPnl = false, n = 0, ytdPnl = 0, ytdPrevMv = 0, todayContrib = [], ytdContrib = [];
+  var hasFx = false, fxUse = {};   /* v156：是否存在需折算的外币持仓 / 实际用到的币种 */
   stocks.forEach(function(s){
     var q = stockInfo[s.code];
     var _nm = (q && q.name) ? q.name : s.code;   /* v138 贡献 TOP 用名称 */
@@ -2766,11 +2876,20 @@ function renderStocks(){
     var cumPct = null, cumPnl = null;
     if(mv !== null && s.cost && s.shares){
       var costMv = s.shares * s.cost;
-      cumPnl = mv - costMv;            /* 累计盈亏 = 市值 − 成本市值 */
+      cumPnl = mv - costMv;            /* 累计盈亏 = 市值 − 成本市值（原币） */
       cumPct = (mv / costMv - 1) * 100;
     }
-    if(mv !== null){
-      totMv += mv; n++;
+    /* v156 汇率折算：美股/港股的市值·盈亏是原币金额，必须折成人民币才能与 A股·基金相加。
+       成本价与现价都按原币录入，所以「先算原币差额、再整体乘 _fx」口径一致；
+       cumPct 是比率与币种无关，不折算。 */
+    var _cur = curOfStock(s.code), _fx = fxOf(_cur), _fxForeign = (_cur !== 'CNY');
+    if(_fxForeign){ hasFx = true; fxUse[_cur] = true; }
+    var mvCny     = (_fxForeign && mv !== null)     ? mv * _fx     : mv;
+    var pnlCny    = (_fxForeign && pnl !== null)    ? pnl * _fx    : pnl;
+    var prevMvCny = (_fxForeign && prevMv !== null) ? prevMv * _fx : prevMv;
+    var cumPnlCny = (_fxForeign && cumPnl !== null) ? cumPnl * _fx : cumPnl;
+    if(mvCny !== null){
+      totMv += mvCny; n++;
       /* 昨日盈亏：股数 ×(昨收 − 前收)。前收从新浪日K trend 倒数第2天取（非盘中也有数据）。
          非盘中时段顶部卡会显示"昨日盈亏"而不是空洞的"今日盈亏=0"
          v138：同时记录逐只贡献，供顶部卡「贡献 TOP」取赚最多/拖后腿 */
@@ -2778,34 +2897,55 @@ function renderStocks(){
         var _tl = q.trend.length;
         var _yC = q.trend[_tl - 1].close, _yP = q.trend[_tl - 2].close;
         if(!isNaN(_yC) && !isNaN(_yP) && _yP > 0){
-          var _yOne = s.shares * (_yC - _yP);
+          var _yOne = s.shares * (_yC - _yP) * _fx;
           ytdPnl += _yOne;
-          ytdPrevMv += s.shares * _yP;
+          ytdPrevMv += s.shares * _yP * _fx;
           ytdContrib.push({name: _nm, pnl: _yOne});
         }
       }
     }
-    if(pnl !== null){ totPnl += pnl; hasPnl = true; todayContrib.push({name: _nm, pnl: pnl}); }
-    if(prevMv !== null) totPrev += prevMv;
-    if(cumPnl !== null) totCum += cumPnl;
-    if(s.cost && s.shares){ totCost += s.shares * s.cost; hasCost = true; }
-    if(s.realized) totRealized += s.realized;
+    if(pnlCny !== null){ totPnl += pnlCny; hasPnl = true; todayContrib.push({name: _nm, pnl: pnlCny}); }
+    if(prevMvCny !== null) totPrev += prevMvCny;
+    if(cumPnlCny !== null) totCum += cumPnlCny;
+    if(s.cost && s.shares){ totCost += s.shares * s.cost * _fx; hasCost = true; }
+    if(s.realized) totRealized += s.realized * _fx;
     var _stkNm = (q && q.name) ? q.name : '加载中…';
     /* v48 兜底：老数据 stocks 里可能没 type 字段（v47 之前的批量编辑保存会丢 type）。
        这里只用于渲染显示，不写回 storage；下次 saveStockBatch/saveStock 会被永久写入。 */
     var _stkType = s.type || classifyStockType(s.code).cls;
+    /* v156 外币：现价/成本价按原币显示（加 $ / HK$ 前缀），市值列给人民币折算值 + 原币小字 */
+    var _sym = curSym(_cur);
+    var _priceCell = (price !== null) ? (_sym + fmtNum(price)) : '--';
+    /* v158 外币：成本价改「人民币为主 + 原币小字」，与市值/盈亏列同款式 */
+    var _costCell = '--';
+    if(s.cost){
+      _costCell = _fxForeign
+        ? (fmtNum(s.cost * _fx, 3) + '<div class="muted" style="font-size:11px">' + _sym + fmtNum(s.cost, 3) + '</div>')
+        : fmtNum(s.cost, 3);
+    }
+    var _mvCell = fmtNum(mvCny);
+    if(_fxForeign && mv !== null){ _mvCell += '<div class="muted" style="font-size:11px">' + _sym + fmtNum(mv) + '</div>'; }
+    /* v157 外币：今日盈亏 / 累计盈亏 同样附原币小字（符号在前，如 +$20.00），口径与市值列一致 */
+    var _fxSmall = function(v){ return (v > 0 ? '+' : (v < 0 ? '-' : '')) + _sym + fmtNum(Math.abs(v)); };
+    var _pnlCell = fmtSigned(pnlCny);
+    if(_fxForeign && pnl !== null){ _pnlCell += '<div class="muted" style="font-size:11px">' + _fxSmall(pnl) + '</div>'; }
+    var _cumCell = (cumPnlCny !== null) ? fmtSigned(cumPnlCny) : '--';
+    if(_fxForeign && cumPnl !== null){ _cumCell += '<div class="muted" style="font-size:11px">' + _fxSmall(cumPnl) + '</div>'; }
+    /* v158 外币：已实现同样附原币小字 */
+    var _realCell = (s.realized ? fmtSigned(s.realized * _fx) : '--');
+    if(_fxForeign && s.realized){ _realCell += '<div class="muted" style="font-size:11px">' + _fxSmall(s.realized) + '</div>'; }
     html += '<tr><td title="' + escHtml(_stkNm) + '">' + escHtml(_stkNm) + '</td>'
           + '<td>' + typeTag(_stkType) + '</td>'
           + '<td>' + s.code.replace(/^(sh|sz|hk|us|bj)/, '') + '</td>'
-          + '<td>' + fmtNum(price) + '</td>'
-          + '<td>' + fmtNum(mv) + '</td>'
+          + '<td>' + _priceCell + '</td>'
+          + '<td>' + _mvCell + '</td>'
           + '<td>' + (s.shares ? Number(s.shares).toLocaleString() : '--') + '</td>'
-          + '<td>' + (s.cost ? fmtNum(s.cost, 3) : '--') + '</td>'
+          + '<td>' + _costCell + '</td>'
           + '<td class="' + (pct !== null ? cls(pct) : 'muted') + '">' + (pct !== null ? fmtPct(pct) : '--') + '</td>'
-          + '<td class="' + cls(pnl) + '">' + fmtSigned(pnl) + '</td>'
+          + '<td class="' + cls(pnlCny) + '">' + _pnlCell + '</td>'
           + '<td class="' + (cumPct !== null ? cls(cumPct) : 'muted') + '">' + (cumPct !== null ? fmtPct(cumPct) : '--') + '</td>'
-          + '<td class="' + (cumPnl !== null ? cls(cumPnl) : 'muted') + '">' + (cumPnl !== null ? fmtSigned(cumPnl) : '--') + '</td>'
-          + '<td class="' + (s.realized ? cls(s.realized) : 'muted') + '">' + (s.realized ? fmtSigned(s.realized) : '--') + '</td>'
+          + '<td class="' + (cumPnlCny !== null ? cls(cumPnlCny) : 'muted') + '">' + _cumCell + '</td>'
+          + '<td class="' + (s.realized ? cls(s.realized * _fx) : 'muted') + '">' + _realCell + '</td>'
           + `<td><span class="link" data-act="openTrade" data-args='["stock","${s.code}","add"]'>加仓</span><span class="link" data-act="openTrade" data-args='["stock","${s.code}","sell"]'>减仓</span><span class="link" data-act="openStockModal" data-args='["${s.code}"]'>编辑</span><span class="link" style="color:var(--red)" data-act="delStock" data-args='["${s.code}"]'>删除</span></td></tr>`;
   });
   if(stocks.length){
@@ -2822,7 +2962,20 @@ function renderStocks(){
   $('#stockBody').innerHTML = html || '<tr><td colspan="12" class="muted" style="text-align:center;padding:20px">暂无股票持仓，点击顶部 <b>+</b> 按钮添加</td></tr>';
   /* 整段 section 显示控制：无任何股票持仓时连标题带表一起隐藏 */
   $('#stockSection').style.display = stocks.length ? '' : 'none';
-  return {totalMv: totMv, totalPnl: totPnl, prevMv: totPrev, count: n, hasPnl: hasPnl, cum: totCum, totalCost: totCost, hasCost: hasCost, realized: totRealized,
+  /* v156 汇率脚注：说明外币持仓用的折算汇率与来源，避免"这数怎么来的" */
+  var _fxn = $('#fxNote');
+  if(_fxn){
+    var _fcs = Object.keys(fxUse);
+    if(_fcs.length){
+      _fxn.style.display = '';
+      _fxn.innerHTML = '外币持仓已按汇率折算为人民币计入合计：' + _fcs.map(function(c){
+        return '1 ' + c + ' = ' + fxOf(c).toFixed(4) + ' CNY（' + fxSrcOf(c) + '）';
+      }).join(' · ') + '　可在「提醒设置 → 汇率折算」手填覆盖。';
+    }else{
+      _fxn.style.display = 'none'; _fxn.innerHTML = '';
+    }
+  }
+  return {totalMv: totMv, totalPnl: totPnl, prevMv: totPrev, count: n, hasPnl: hasPnl, cum: totCum, totalCost: totCost, hasCost: hasCost, realized: totRealized, hasFx: hasFx,
     ytdPnl: ytdPnl, ytdPrevMv: ytdPrevMv, ytdPct: ytdPrevMv > 0 ? ytdPnl / ytdPrevMv * 100 : 0,
     todayContrib: todayContrib, ytdContrib: ytdContrib
   };
@@ -2877,7 +3030,7 @@ function buildRecentDailyPnl(n){
       var d = t[i].date;
       if(!d || d >= todayStr) continue;
       if(!isFinite(t[i].close) || !isFinite(t[i - 1].close)) continue;
-      map[d] = (map[d] || 0) + s.shares * (t[i].close - t[i - 1].close);
+      map[d] = (map[d] || 0) + s.shares * (t[i].close - t[i - 1].close) * fxOf(curOfStock(s.code));
     }
   });
   var keys = Object.keys(map).sort();
@@ -3027,6 +3180,7 @@ function updateSummary(fRes, sRes){
   if(!yView && fRes.holdEstCount > 0){ pnlNote += ' · ' + fRes.holdEstCount + ' 只为重仓股估算'; }
   if(!yView && fRes.noGzCount > 0){ pnlNote += ' · ' + fRes.noGzCount + ' 只无盘中估值（晚间净值更新后计入）'; }
   if(!yView && fRes.closeEstCount > 0){ pnlNote += ' · ' + fRes.closeEstCount + ' 只显示收盘估值（净值公布后修正）'; }
+  if(sRes.hasFx){ pnlNote += ' · 外币持仓已按汇率折算为人民币'; }
   $('#pnlTime').textContent = pnlNote;
   /* 按品种拆分：基金 vs 股票（同口径随 yView 切昨日/今日）
      各自按"是否有持仓"独立判定：无持仓 → 「未持仓」灰色占位；有持仓 → 数值+颜色。
@@ -3160,6 +3314,8 @@ function updateStkTypeHint(){
   var hint = $('#stkTypeHint'); if(!hint) return;
   var raw = ($('#inStkCode').value || '').trim();
   var sel = $('#inStkType');
+  /* v159 成本价币种提示：港股→港元 / 美股→美元 / 其余→元 */
+  setCcyHint({lab:'inStkCostLab', baseLab:'成本价', opt:true, inp:'inStkCost'}, normStockCode(raw) || '');
   if(!raw){ hint.className='stk-type-hint'; hint.innerHTML=''; if(sel) sel.dataset.touched=''; return; }
   var nc = normStockCode(raw);
   if(!nc){ hint.className='stk-type-hint bad'; hint.innerHTML='⚠ 无法识别，请输入 A股6位 / 港股 00000.HK / 北交所 920799(旧8xx自动转920) / 美股 AAPL'; if(sel) sel.dataset.touched=''; return; }
@@ -3364,7 +3520,15 @@ function setAddFields(){
   if(!fund && addState.stkKey){
     var sel = $('#inAddStkType'); if(sel) sel.value = classifyStockType(addState.stkKey).cls;
   }
+  syncAddStkCostHint();
   updateAddSaveBtn();
+}
+/* v159 添加持仓弹窗：成本价币种提示（港股→港元 / 美股→美元 / A股·场内基金→元） */
+function syncAddStkCostHint(){
+  setCcyHint({head:'addStkCostHead', headBase:'成本',
+              lab:'inAddStkCostLab', baseLab:'成本价', opt:true,
+              inp:'inAddStkCost', tip:'addStkCostTip'},
+             (addState && addState.stkKey) || '');
 }
 /* 确定按钮可用性：仅识别成功（场外/场内/双选已定）时可提交，替代错误后 alert */
 function updateAddSaveBtn(){
@@ -3465,7 +3629,7 @@ function saveAdd(){
 var ALERT_KEY = 'fund_board_alerts_v1';
 var alerts = (function(){
   var defs = {pct:3, overrides:{}, stockOverrides:{}, notice:true, stockNotice:true, sound:true, notify:false, autoMin:0, stockMuted:{}, fundMuted:{},
-              commRateW:2.5, minComm:5, stampTaxW:5, fundRateW:10};  /* 交易成本：佣金费率/最低佣金/卖出印花税/基金申购费率，单位均为「万分之」与「元」 */
+              commRateW:2.5, minComm:5, stampTaxW:5, fundRateW:10, fxUSD:'', fxHKD:''};  /* 交易成本：佣金费率/最低佣金/卖出印花税/基金申购费率，单位均为「万分之」与「元」 */
   try{
     var a = JSON.parse(localStorage.getItem(ALERT_KEY));
     if(a && a.settings){
@@ -3715,6 +3879,13 @@ function openAlerts(){
   $('#setMinComm').value = (alerts.settings.minComm != null) ? alerts.settings.minComm : 5;
   $('#setStampTaxW').value = (alerts.settings.stampTaxW != null) ? alerts.settings.stampTaxW : 5;
   $('#setFundRateW').value = (alerts.settings.fundRateW != null) ? alerts.settings.fundRateW : 10;
+  /* v156 手填汇率：空 = 自动获取（值存 alerts.settings.fxUSD / fxHKD） */
+  $('#setFxUSD').value = (alerts.settings.fxUSD != null && alerts.settings.fxUSD !== '') ? alerts.settings.fxUSD : '';
+  $('#setFxHKD').value = (alerts.settings.fxHKD != null && alerts.settings.fxHKD !== '') ? alerts.settings.fxHKD : '';
+  var _fh = $('#fxLiveHint');
+  if(_fh){
+    _fh.textContent = '当前 1 USD=' + fxOf('USD').toFixed(4) + ' · 1 HKD=' + fxOf('HKD').toFixed(4) + ' CNY（' + fxSrcOf('USD') + '）';
+  }
   /* 单基金/股票阈值列表（合并了原顶部"仅停提醒"芯片：每行可直接 × 停提醒 / 停后变"恢复"） */
   $('#cntFund').textContent = holdings.length;
   $('#cntStock').textContent = stocks.length;
@@ -4360,6 +4531,8 @@ function serializeAlertForm(){
     minComm: $('#setMinComm').value,
     stampTaxW: $('#setStampTaxW').value,
     fundRateW: $('#setFundRateW').value,
+    fxUSD: $('#setFxUSD').value,
+    fxHKD: $('#setFxHKD').value,
     ov: ov,
     stkOv: stkOv
   });
@@ -4467,6 +4640,11 @@ async function saveAlertSettings(){
   alerts.settings.minComm = (!isNaN(minComm) && minComm >= 0) ? minComm : 5;
   alerts.settings.stampTaxW = (!isNaN(stampTaxW) && stampTaxW >= 0) ? stampTaxW : 5;
   alerts.settings.fundRateW = (!isNaN(fundRateW) && fundRateW >= 0) ? fundRateW : 10;
+  /* v156 汇率：留空/非法 → 存空串表示「自动获取」 */
+  var fxUSD = parseFloat($('#setFxUSD').value);
+  var fxHKD = parseFloat($('#setFxHKD').value);
+  alerts.settings.fxUSD = (isFinite(fxUSD) && fxUSD > 0) ? fxUSD : '';
+  alerts.settings.fxHKD = (isFinite(fxHKD) && fxHKD > 0) ? fxHKD : '';
   var wantNotify = $('#setNotify').checked;
   if(wantNotify){
     /* 扩展原生通知：权限由 Chrome 在首次 create 时弹窗授予；这里只拦"已拒绝"的情况 */
@@ -4511,6 +4689,7 @@ async function saveAlertSettings(){
   window._alertSnap = serializeAlertForm();
   updateSaveBtn();
   toast('提醒设置已保存');
+  refreshAll();   /* v156：手填汇率改了要立刻重算总市值/盈亏 */
 }
 
 function clickImportFile(){
@@ -4575,6 +4754,71 @@ refreshAll();
   if(!alerts.settings.autoMin){ alerts.settings.autoMin = 1; saveAlerts(); }
   applyAuto();
 })();
+
+/* ============== v1.1.2 隐私打码（眼睛切换） ==============
+   遮住总览两卡（持仓市值/今日盈亏）的金额：主体数值替换为 ••••，
+   累计小结/迷你柱状图走 CSS blur。状态存 localStorage，刷新后自动重新遮罩。 */
+var PRIVACY_KEY = 'pd_privacyMask';
+var PRIVACY_IDS = ['totalMv','estDelta','realMv','estMv','cumVal','cumPct','cumRealized','todayPnl','pnlFund','pnlStock'];
+var PRIVACY_MASK = '••••';
+function privacyIsOn(){ try{ return localStorage.getItem(PRIVACY_KEY) === '1'; }catch(e){ return false; } }
+function applyPrivacyMask(){
+  var on = privacyIsOn();
+  document.body.classList.toggle('privacy-on', on);
+  var btn = document.getElementById('privacyBtn');
+  if(btn){
+    btn.classList.toggle('is-off', on);
+    btn.title = on ? '点击显示金额' : '点击隐藏金额';
+  }
+  PRIVACY_IDS.forEach(function(id){
+    var el = document.getElementById(id);
+    if(!el) return;
+    if(on){
+      if(el.innerHTML === ''){ return; }  /* 空内容（如无估算数据）不显示遮罩点 */
+      /* 未遮罩时保存当前真实内容（首次或 refresh 重写后都会走到这） */
+      if(el.innerHTML !== PRIVACY_MASK){ el.dataset.pvReal = el.innerHTML; }
+      el.dataset.pvMasked = '1';
+      el.textContent = PRIVACY_MASK;
+      el.classList.add('pv-muted');
+    }else if(el.dataset.pvMasked === '1'){
+      el.innerHTML = el.dataset.pvReal || '';
+      delete el.dataset.pvReal;
+      delete el.dataset.pvMasked;
+      el.classList.remove('pv-muted');
+    }
+  });
+  /* 主逻辑已接管（遮罩或还原），撤掉首帧兜底态，避免 •••• 上残留模糊 */
+  try{ document.documentElement.classList.remove('pv-boot'); }catch(e){}
+}
+window.togglePrivacy = function(){
+  try{ localStorage.setItem(PRIVACY_KEY, privacyIsOn() ? '0' : '1'); }catch(e){}
+  applyPrivacyMask();
+};
+
+/* 兜底：隐私开启时，任何异步渲染路径（await 间隙、定时器、其它模块）把真实金额写回 DOM，
+   都立刻重新遮罩——只在真正「数据漂移」时才动手，避免与自身写入互相触发死循环。
+   MutationObserver 回调在微任务里跑，先于绘制，所以看不到明文的中间帧。 */
+var _pvBusy = false;
+function privacyDrift(){
+  for(var i = 0; i < PRIVACY_IDS.length; i++){
+    var el = document.getElementById(PRIVACY_IDS[i]);
+    if(!el) continue;
+    if(el.innerHTML !== PRIVACY_MASK && el.innerHTML !== '') return true;
+  }
+  return false;
+}
+function initPrivacyObserver(){
+  try{
+    if(typeof MutationObserver !== 'function' || !document.body) return;
+    new MutationObserver(function(){
+      if(_pvBusy || !privacyIsOn() || !privacyDrift()) return;
+      _pvBusy = true;
+      try{ applyPrivacyMask(); } finally { _pvBusy = false; }
+    }).observe(document.body, {childList:true, subtree:true, characterData:true});
+  }catch(e){}
+}
+initPrivacyObserver();
+applyPrivacyMask();
 
 /* ============== 防篡改自检 ==============
    别人 fork 后若把打赏入口删掉、或移除赞赏码远程加载逻辑（想换成自己的收款码），这里会当场暴露。
