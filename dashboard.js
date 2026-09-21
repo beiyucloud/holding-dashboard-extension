@@ -1725,7 +1725,8 @@ async function refreshAll(){
     });
     stocks.forEach(function(s2){
       var q2 = stockInfo[s2.code];
-      var mv2 = (q2 && q2.price && s2.shares) ? s2.shares * q2.price : 0;
+      /* v161 权重同样要折算：美元 / 港元市值不折会按 1:1 参与加权，组合曲线权重失真 */
+      var mv2 = (q2 && q2.price && s2.shares) ? s2.shares * q2.price * fxOf(curOfStock(s2.code)) : 0;
       wItems.push({w: mv2, type: 'stock', ref: s2});
     });
     var totalW = wItems.reduce(function(a2, b2){ return a2 + b2.w; }, 0);
@@ -2913,9 +2914,15 @@ function renderStocks(){
     /* v48 兜底：老数据 stocks 里可能没 type 字段（v47 之前的批量编辑保存会丢 type）。
        这里只用于渲染显示，不写回 storage；下次 saveStockBatch/saveStock 会被永久写入。 */
     var _stkType = s.type || classifyStockType(s.code).cls;
-    /* v156 外币：现价/成本价按原币显示（加 $ / HK$ 前缀），市值列给人民币折算值 + 原币小字 */
+    /* v161 外币：现价也改「人民币为主 + 原币小字」，与成本价 / 市值 / 盈亏列同基准，
+       同一行「现价 ↔ 成本价」可直接比高低；A股与场内基金维持纯人民币原样。 */
     var _sym = curSym(_cur);
-    var _priceCell = (price !== null) ? (_sym + fmtNum(price)) : '--';
+    var _priceCell = '--';
+    if(price !== null){
+      _priceCell = _fxForeign
+        ? (fmtNum(price * _fx) + '<div class="muted" style="font-size:11px">' + _sym + fmtNum(price) + '</div>')
+        : fmtNum(price);
+    }
     /* v158 外币：成本价改「人民币为主 + 原币小字」，与市值/盈亏列同款式 */
     var _costCell = '--';
     if(s.cost){
