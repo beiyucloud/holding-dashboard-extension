@@ -84,7 +84,6 @@
   /* 今日盈亏卡：label 同行放时间戳，下方按品种拆分 */
   .label-flex{display:flex;justify-content:space-between;align-items:baseline;}
   .label-flex .ts{font-size:11px;color:var(--muted);font-weight:400;}
-  .fold-btn{font-size:11px;padding:3px 9px;line-height:1.2;border-radius:5px;}
   .pnl-split{margin-top:8px;display:flex;flex-direction:column;gap:4px;font-size:12px;}
   .pnl-row{display:flex;align-items:center;justify-content:flex-end;color:var(--muted);font-variant-numeric:tabular-nums;}
   .pnl-row .dot{width:7px;height:7px;border-radius:50%;flex:none;margin-right:6px;}
@@ -150,8 +149,10 @@
   .tag.pf{background:rgba(240,69,69,.15);color:var(--red);}
   .tag.hs{background:rgba(47,168,120,.15);color:var(--green);}
   #chart{height:120px;margin-top:4px;}
-  .chart-foot{display:flex;flex-direction:column;gap:3px;font-size:12px;color:var(--muted);margin-top:6px;padding-top:6px;border-top:1px dashed rgba(124,138,165,.25);}
-  .chart-foot .ft-row{display:flex;justify-content:space-between;align-items:center;gap:8px;}
+  .chart-foot{display:grid;grid-template-columns:auto auto;justify-content:end;column-gap:10px;row-gap:3px;font-size:12px;color:var(--muted);margin-top:6px;padding-top:6px;border-top:1px dashed rgba(124,138,165,.25);}
+  .chart-foot .ft-row{display:contents;}
+  .chart-foot .ft-lbl{text-align:right;white-space:nowrap;}
+  .chart-foot .ft-val{display:flex;align-items:baseline;gap:8px;min-width:0;}
   .chart-foot .ft-row .ftv{font-weight:500;}
   .chart-foot .ft-row .ft-hint{font-size:11px;opacity:.7;}
   .chart-foot .ft-today .ft-hint, .chart-foot .ft-today .ft-lbl{color:var(--muted);}
@@ -365,6 +366,47 @@
   .alert-th-head .g-item{display:flex;align-items:center;flex-wrap:wrap;gap:4px 8px;font-size:13px;row-gap:2px;}
   .alert-th-head .g-item input[type=number]{width:60px;}
   .alert-th-head .pct-note{flex-basis:100%;margin-left:0;font-size:11px;line-height:1.45;}
+  /* v164 设置分类标题：明确每个区块管什么 */
+  .set-cat{display:flex;align-items:center;gap:10px;margin:18px 0 8px;font-size:12px;color:var(--muted);font-weight:600;}
+  .modal-body .set-cat:first-child{margin-top:2px;}
+  .set-cat::after{content:'';flex:1;height:1px;background:var(--border);}
+  /* v164 设置弹窗排版优化：滚动区留白 / 汇率两列 / 阈值行成卡 / 勾选网格 / 底部操作栏 */
+  #maskSettings .modal-body{padding:0 10px 0 0;margin:0 -10px 0 0;}
+  #maskSettings .set-cat{margin:16px 0 8px;}
+  #maskSettings .modal-body > .set-cat:first-child{margin-top:0;}
+  #fxRowV156{display:grid;grid-template-columns:1fr 1fr;gap:10px 18px;align-items:center;}
+  #fxRowV156 .g-item{display:flex;align-items:center;gap:6px;min-width:0;margin:0;}
+  #fxRowV156 .g-item .lab{flex:none;width:74px;color:var(--muted);font-size:12px;white-space:nowrap;}
+  #fxRowV156 .g-item input{flex:1 1 auto;width:auto;min-width:0;margin:0;}
+  #fxRowV156 .g-item > span:not(.lab){flex:none;color:var(--muted);font-size:11px;}
+  #fxRowV156 .hint{grid-column:1 / -1;display:block;line-height:1.5;}
+  .alert-th-head{padding:10px 14px;background:var(--bg);border:1px solid var(--border);border-radius:7px;margin-bottom:8px;}
+  #cardVisRow{display:grid;grid-template-columns:repeat(auto-fill,minmax(232px,1fr));gap:10px 16px;align-items:center;}
+  #cardVisRow .chk{white-space:normal;margin:0;line-height:1.35;}
+  #cardVisRow .chk .hint{font-size:11px;}
+  #dataOpsRow{gap:10px;}
+  #dataOpsRow .btn{min-width:88px;justify-content:center;}
+  /* .modal input{width:100%} 对设置弹窗的副作用收敛：复选框不占满格、内联控件紧凑 */
+  #maskSettings .alert-inline input[type=checkbox]{width:auto;height:auto;padding:0;margin:0;flex:none;}
+  #maskSettings .alert-inline input:not([type=checkbox]),#maskSettings .alert-inline select{padding:6px 9px;font-size:13px;margin-bottom:0;}
+  #maskSettings .alert-th-head input,#maskSettings .alert-th-head select{padding:6px 9px;font-size:13px;margin-bottom:0;height:auto;}
+  #maskSettings .alert-inline select{width:auto;min-width:104px;}
+  @media (max-width:560px){
+    #fxRowV156{grid-template-columns:1fr;}
+    #cardVisRow{grid-template-columns:1fr;}
+    #setFooterOps .ops-right{flex:1;justify-content:flex-end;}
+  }
+  #setFooterOps{display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;}
+  #setFooterOps .ops-right{display:flex;gap:8px;flex-wrap:wrap;}
+  /* v164 单品种阈值折叠：默认收起，点击头部展开；无自定义设置时摘要提示"全部用全局阈值" */
+  .th-toggle{display:flex;align-items:center;gap:8px;margin:8px 0 6px;padding:8px 14px;background:var(--bg);border:1px solid var(--border);border-radius:7px;cursor:pointer;user-select:none;transition:border-color .15s;}
+  .th-toggle:hover{border-color:var(--blue);}
+  .th-toggle .th-caret{display:inline-block;color:var(--muted);font-size:11px;transition:transform .15s;width:10px;text-align:center;}
+  .th-toggle.open .th-caret{transform:rotate(90deg);}
+  .th-toggle .lab{color:var(--muted);font-size:13px;}
+  .th-toggle .hint{color:var(--muted);font-size:11px;margin-left:auto;}
+  .th-panel-wrap{padding:2px 4px 0;}
+  .th-panel-wrap.collapsed{display:none;}
   .alert-panel{display:none;}
   .alert-panel.active{display:block;}
   /* 阈值列表：紧凑 4 字段布局 */
@@ -670,7 +712,8 @@
   <span class="spacer" data-page-node-id="Hxcq5ENRXcMhGobaeqtDfZ"></span>
   <button class="btn btn-icon keep-widget" data-act="refreshAll" title="刷新" aria-label="刷新" data-page-node-id="Uv6V76FPflMximsux7rbMH"><svg viewBox="0 0 24 24" data-page-node-id="9DlE3OjjP6RHfLwhHQJLCk"><path d="M17.65 6.35C16.2 4.9 14.21 4 12 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08c-.82 2.33-3.04 4-5.65 4-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z" data-page-node-id="fRoPUkRLSw4MMxe0dzsubT"/></svg></button>
   <button class="btn blue btn-icon" data-act="openAddModal" title="添加持仓" aria-label="添加持仓" data-page-node-id="WYv2b74zRFCopg9pPsXEBe"><svg viewBox="0 0 24 24" data-page-node-id="buO4SXIYnz7bAV5YmYTdgO"><path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z" data-page-node-id="SbUxGCrOnFaKhKsmfR0ryP"/></svg></button>
-  <button class="btn btn-icon" data-act="openBatch" title="批量编辑（含导出 / 导入）" aria-label="批量编辑" data-page-node-id="VQiwUiAK4qzPviqcLqxM0m"><svg viewBox="0 0 24 24" data-page-node-id="nwB1NC3bzNl2JXeQLZYZCF"><path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34a.9959.9959 0 0 0-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83c.39-.38 1.02-.38 1.41 0z" data-page-node-id="6nLt5l5ZFopNfpgM3jnnU6"/></svg></button>
+  <button class="btn btn-icon" data-act="openBatch" title="批量编辑" aria-label="批量编辑" data-page-node-id="VQiwUiAK4qzPviqcLqxM0m"><svg viewBox="0 0 24 24" data-page-node-id="nwB1NC3bzNl2JXeQLZYZCF"><path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34a.9959.9959 0 0 0-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83c.39-.38 1.02-.38 1.41 0z" data-page-node-id="6nLt5l5ZFopNfpgM3jnnU6"/></svg></button>
+  <button class="btn btn-icon keep-widget" data-act="openSettings" title="设置" aria-label="设置" data-page-node-id="setGearBtnTop1"><svg viewBox="0 0 24 24" data-page-node-id="setGearSvgTop1"><path d="M19.14 12.94c.04-.3.06-.61.06-.94s-.02-.64-.07-.94l2.03-1.58a.49.49 0 0 0 .12-.61l-1.92-3.32a.49.49 0 0 0-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54a.49.49 0 0 0-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.56-1.62.94l-2.39-.96a.49.49 0 0 0-.59.22L2.74 8.87a.49.49 0 0 0 .12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58a.49.49 0 0 0-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32a.49.49 0 0 0-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z"/></svg></button>
   <button class="btn btn-icon keep-widget" style="position:relative" data-act="openAlerts" title="提醒" aria-label="提醒" data-page-node-id="oDJ2hL1Ut5PabLg0Yv3iQC"><svg viewBox="0 0 24 24" data-page-node-id="U8OF8OTtHvR984ztv4VcIn"><path d="M12 22c1.1 0 2-.9 2-2h-4c0 1.1.9 2 2 2zm6-6v-5c0-3.07-1.63-5.64-4.5-6.32V4c0-.83-.67-1.5-1.5-1.5s-1.5.67-1.5 1.5v.68C7.64 5.36 6 7.92 6 11v5l-2 2v1h16v-1l-2-2zm-2 1H8v-6c0-2.48 1.51-4.5 4-4.5s4 2.02 4 4.5v6z" data-page-node-id="bOCsB2FWSJ9Lk5Q63HLn0Q"/></svg><span class="badge" id="alertBadge" style="display:none" data-page-node-id="YBcNgrNyIEUPBAOLfpiOA5">0</span></button>
   <span class="topbar-sep" aria-hidden="true" data-page-node-id="3HU7YDNETFnlZ1nOiVHEP6"></span>
   <a class="btn ghost" href="https://beiyucloud.taoxinyuan.com" target="_blank" rel="noopener noreferrer" style="text-decoration:none" title="查看使用说明与下载" data-page-node-id="SvEusCPSZfbDCwu0vcyKtP">官网</a>
@@ -733,9 +776,9 @@
     </div>
     <div id="chart" data-page-node-id="8HGheUyS7ATp0HJZmRLPM0"></div>
     <div class="chart-foot" data-page-node-id="UOUbHaCgaTwHq6SthEd15Y">
-      <div class="ft-row ft-today" id="ftToday" data-page-node-id="fuVUCtqFYkkf71NrOgvwwm"><span class="ft-lbl" data-page-node-id="omnc3BizoDCxDA7Vuvk0Pf">今日</span> <span class="ftv" data-page-node-id="rlMia8JBV6gmXAHIzH1enJ">--</span><span class="muted ft-hint" data-page-node-id="zSUnP5ELcuNOHKFaLPvBGX">= 顶部今日盈亏卡</span></div>
-      <div class="ft-row ft-7d" id="ft7d" data-page-node-id="4fOqqQO4weQQA6YWjJqZLG">近 7 日累计 <span class="ftv" data-page-node-id="H7HMuvCaqE7NdNBN9AuFmW">组合 <span id="ftPf" data-page-node-id="yDwZDPqo8nTypWrZk7KOJ1">--</span> · 沪深300 <span id="ftHs" data-page-node-id="d7qA1JpY4diMomQrcU0hE9">--</span></span></div>
-      <div class="ft-row ft-diff" id="ftDiff" data-page-node-id="BWDsSMmiOH7C4H2j5CSzu4">跑赢 <span class="ftv" data-page-node-id="nbXV5qcGz7eV29FHR8UdDc">--</span><span class="muted ft-mix" id="ftMix" data-page-node-id="OPI6BRZ0qyQo6sITk4QGsB"></span></div>
+      <div class="ft-row ft-today" id="ftToday" data-page-node-id="fuVUCtqFYkkf71NrOgvwwm"><span class="ft-lbl" data-page-node-id="omnc3BizoDCxDA7Vuvk0Pf">今日</span><span class="ft-val"><span class="ftv" data-page-node-id="rlMia8JBV6gmXAHIzH1enJ">--</span><span class="muted ft-hint" data-page-node-id="zSUnP5ELcuNOHKFaLPvBGX">= 顶部今日盈亏卡</span></span></div>
+      <div class="ft-row ft-7d" id="ft7d" data-page-node-id="4fOqqQO4weQQA6YWjJqZLG"><span class="ft-lbl">近 7 日累计</span><span class="ft-val"><span class="ftv" data-page-node-id="H7HMuvCaqE7NdNBN9AuFmW">组合 <span id="ftPf" data-page-node-id="yDwZDPqo8nTypWrZk7KOJ1">--</span> · 沪深300 <span id="ftHs" data-page-node-id="d7qA1JpY4diMomQrcU0hE9">--</span></span></span></div>
+      <div class="ft-row ft-diff" id="ftDiff" data-page-node-id="BWDsSMmiOH7C4H2j5CSzu4"><span class="ft-lbl">跑赢</span><span class="ft-val"><span class="ftv" data-page-node-id="nbXV5qcGz7eV29FHR8UdDc">--</span><span class="muted ft-mix" id="ftMix" data-page-node-id="OPI6BRZ0qyQo6sITk4QGsB"></span></span></div>
     </div>
   </div>
 </div>
@@ -751,7 +794,7 @@
 </div>
 
 <!-- 第二行：指数 -->
-<div class="sec-title" style="display:flex;align-items:center;justify-content:space-between;gap:10px;" data-page-node-id="Wu8kGlHEaCDEWPvON2N8Jw">
+<div class="sec-title" id="idxSecTitle" style="display:flex;align-items:center;justify-content:space-between;gap:10px;" data-page-node-id="Wu8kGlHEaCDEWPvON2N8Jw">
   <span data-page-node-id="ozUyTYMqQ6wvyIvbQhDlrG">各主体实时<small id="idxSubtitle" data-page-node-id="TGgPQsTqDTgi0dMdt1DB0z">沪市主板 / 沪深300 / 创业板指 / 科创50 / 恒生科技 / 中证500 / 国际金价</small></span>
   <button class="btn" style="font-size:12px;padding:4px 10px;white-space:nowrap" data-act="openIdxConfig" data-page-node-id="Arqou4H54Zt3syGt5rU0ym">编辑显示</button>
 </div>
@@ -762,7 +805,6 @@
   <div class="card" data-page-node-id="XYEH84eTSwGnWL4jD5tB1C">
     <div class="label label-flex" data-page-node-id="yrkfBP4Vmx3njDX5AnvR4U">
       <span data-page-node-id="izFOt9EDIApqNOI1Xb2SDm">今日涨跌家数（沪深京全市场）</span>
-      <button class="btn ghost fold-btn" data-act="toggleCard" data-args='["zd"]' data-page-node-id="9BGtXGtglFus5T4IWvW81Z">收起</button>
     </div>
     <div data-fold-body="zd" data-page-node-id="sjDxWraCJ9cHW2qrmtTet4">
       <div class="zd-num" data-page-node-id="G1epWc4aSqjADT286hn2CJ">
@@ -788,7 +830,6 @@
   <div class="card" data-page-node-id="K882he8PE2KdDwOOHkhVrX">
     <div class="label label-flex" data-page-node-id="UrkIKOylSAbetzKDrmj8ck">
       <span data-page-node-id="QNzdjIkFCZHbXubaI1sxqR">板块资金流</span>
-      <button class="btn ghost fold-btn" data-act="toggleCard" data-args='["bk"]' data-page-node-id="GFDcyIFFyt3o6Ak0WeQ31F">收起</button>
     </div>
     <div data-fold-body="bk">
       <div class="bk-types" data-bk-types="bk">
@@ -837,7 +878,7 @@
 </div>
 
 <div class="footer" data-page-node-id="5mzn8eeIKhJiHZZYyCZBUS">
-  <div data-page-node-id="zUp8qF5bZSbN5uoUBsDvh0">看板版本 v163（2026-09-21）· 数据通道：<span id="srcStatus" data-page-node-id="z1wYSVq2SDR3rGEc2DuS8q">检测中…</span>（若有 ✗ 请刷新重试）· <a href="https://beiyucloud.taoxinyuan.com" target="_blank" rel="noopener noreferrer" style="color:var(--blue);text-decoration:none" data-page-node-id="DdTbDsjtUyJZgVdPL14zdg">持仓实时盈亏看板</a> · <a href="privacy.html" target="_blank" rel="noopener noreferrer" style="color:var(--blue);text-decoration:none" data-page-node-id="FefdJe82QUh4pQusOzTsHG">隐私政策</a></div>
+  <div data-page-node-id="zUp8qF5bZSbN5uoUBsDvh0">看板版本 v164（2026-09-22）· 数据通道：<span id="srcStatus" data-page-node-id="z1wYSVq2SDR3rGEc2DuS8q">检测中…</span>（若有 ✗ 请刷新重试）· <a href="https://beiyucloud.taoxinyuan.com" target="_blank" rel="noopener noreferrer" style="color:var(--blue);text-decoration:none" data-page-node-id="DdTbDsjtUyJZgVdPL14zdg">持仓实时盈亏看板</a> · <a href="privacy.html" target="_blank" rel="noopener noreferrer" style="color:var(--blue);text-decoration:none" data-page-node-id="FefdJe82QUh4pQusOzTsHG">隐私政策</a></div>
   数据来源：新浪财经（盘中实时估算）· 天天基金移动端接口（净值/重仓股）· 腾讯行情（指数）· 东方财富（个股实时行情 / 涨跌家数 / 行业板块 / 国际金价 / 离岸人民币汇率）。<br data-page-node-id="PZMJhv4er1FN8SaVQfTn8n">
   计算口径：美股 / 港股按实时汇率折算为人民币后计入总市值与盈亏（可在「提醒设置 → 汇率折算」手填覆盖）；录入口径：成本价与加仓 / 减仓成交价一律按原币填写（港股港元 HK$、美股美元 $），不要换算成人民币填；填份额时 今日盈亏 = 份额 ×（估算净值 − 昨日净值）（盘中/盘后显示实时估算）；持有收益率 = 已结算市值 ÷（份额 × 成本价）− 1，净值未公布时沿用上一交易日确认净值、不随盘中估值跳动，净值公布后自动更新；未填份额时按「持有市值 × 估算涨幅」近似。<br data-page-node-id="nmwS0MHOUCZIY8BU70uad3">
   「实时估算」为新浪基于基金前十大重仓股/债券/ETF 的加权估算（分钟级）；「重仓估算」为本页按前十大重仓股实时行情的自建兜底估算。估算均基于上季持仓，与实际净值有偏差，仅供参考。<br data-page-node-id="CDL3UwBopiRFtyToi6tonR">
@@ -910,9 +951,6 @@
     <div class="ops" style="display:flex;justify-content:space-between;" data-page-node-id="giefY4PIRgDOmIHGA5Tubc">
       <span style="display:flex;gap:10px;" data-page-node-id="zAHPHBcEHtUBt3oTOHRLyO">
         <button class="btn ghost" data-act="batchAddRow" data-page-node-id="uctfFiFdoBg3HD9IdTAj1i">+ 加一行</button>
-        <button class="btn ghost" data-act="clearAllRealized" title="把所有基金与股票的「已实现盈亏 / 操作次数」清零（清测试残留用）" data-page-node-id="FdIicFHxQiOzJE3bU6lxGF">清空已实现</button>
-        <button class="btn teal" data-act="exportData" title="导出全部持仓为 JSON 备份文件" data-page-node-id="fVhvCg0gECBFikrmMa2TSy">导出</button>
-        <button class="btn teal" data-act="clickImportFile" title="从 JSON 备份文件导入持仓" data-page-node-id="c1PdWmmFfx3vr8K8DPKTSN">导入</button>
       </span>
       <span style="display:flex;gap:10px;" data-page-node-id="5iTfrRWn65otRJvk9uCf4R">
         <button class="btn ghost" data-act="closeBatch" data-page-node-id="WQ70A45zsBZxU2alM20pHs">取消</button>
@@ -1105,13 +1143,14 @@
   </div>
 </div>
 
-<!-- 提醒弹窗 -->
-<div class="mask" id="maskAlert" data-page-node-id="85trEIqTFnWqDKTXnfzGro">
-  <div class="modal wide" data-page-node-id="zdc6tycRsrLsn5RYOgGp4A">
-    <h3 style="margin-bottom:12px;" data-page-node-id="RXmCCAr9tnjxScvzEFI5lt">提醒设置</h3>
-    <div class="modal-body" data-page-node-id="RkmhcnR7QtLFMi5Kot48Fi">
+<!-- 设置弹窗（从原「提醒设置」拆出，所有配置类设置归此） -->
+<div class="mask" id="maskSettings">
+  <div class="modal wide">
+    <h3 style="margin-bottom:12px;">设置</h3>
+    <div class="modal-body">
 
     <!-- 顶部全局设置（5 项一行：3 checkbox + 桌面通知+自动刷新） -->
+    <div class="set-cat">通知与刷新</div>
     <div class="alert-chks alert-inline" data-page-node-id="aydAro5GQxildGNEiiVRUp">
       <label class="chk" data-page-node-id="UO5mdwd2Rn3kMjrBpznRhF"><input type="checkbox" id="setNotice" data-evt="change" data-act="onAlertChange" data-page-node-id="viPkcr7x202KajSmXeTGjs">基金公告</label>
       <label class="chk" data-page-node-id="5lLVuykK0YK9C5MK5BmBvY"><input type="checkbox" id="setStockNotice" data-evt="change" data-act="onAlertChange" data-page-node-id="WF3sTj9sJI9NIatnklNG9Q">股票公告</label>
@@ -1124,40 +1163,72 @@
     </div>
 
     <!-- v156 汇率折算（美股/港股 → 人民币）：留空 = 自动获取实时汇率 -->
-    <div class="alert-chks alert-inline" data-page-node-id="fxRowV156">
-      <span class="lab" data-page-node-id="fxLabV156">汇率折算</span>
+    <div class="set-cat">汇率折算</div>
+    <div class="alert-chks alert-inline" id="fxRowV156" data-page-node-id="fxRowV156">
       <div class="g-item" title="留空 = 自动获取实时汇率；填了就按你填的算" data-page-node-id="fxUsdV156"><span class="lab" data-page-node-id="fxUsdLabV156">USD/CNY</span><input type="number" id="setFxUSD" step="0.0001" min="0" placeholder="自动" data-evt="input" data-fns="onAlertChange" data-page-node-id="setFxUSDV156"><span data-page-node-id="fxUsdUnitV156">元</span></div>
       <div class="g-item" title="留空 = 自动获取实时汇率；填了就按你填的算" data-page-node-id="fxHkdV156"><span class="lab" data-page-node-id="fxHkdLabV156">HKD/CNY</span><input type="number" id="setFxHKD" step="0.0001" min="0" placeholder="自动" data-evt="input" data-fns="onAlertChange" data-page-node-id="setFxHKDV156"><span data-page-node-id="fxHkdUnitV156">元</span></div>
       <span class="hint" id="fxLiveHint" style="font-size:11px" data-page-node-id="fxLiveHintV156"></span>
     </div>
 
-    <!-- 交易成本已迁到加减仓弹窗（折叠面板），不在提醒设置里 -->
-
-    <!-- 全局阈值 + 单品种阈值（合并到一行：input 窄一点 + tab + 留空提示） -->
+    <!-- 涨跌提醒：全局阈值一行；单品种阈值默认折叠，点头部展开 -->
+    <div class="set-cat">涨跌提醒</div>
     <div class="alert-th-head" data-page-node-id="hyK0XzsDpdCFuJU5Y8rDuT">
       <div class="g-item" data-page-node-id="TjfFU49c0XnsIAzfKfKRYg"><span class="lab" data-page-node-id="nc7u9ABLsvR7ToHyQsp4il">全局阈值</span><input type="number" id="setPct" step="0.1" min="0.1" data-evt="input" data-fns="updatePctHint;onAlertChange" data-page-node-id="Tv4oD04B0HEc6EDG6xPrb5"><span data-page-node-id="ESSAZ6uukIBGDB9LYpuEzp">%</span><span class="hint" style="margin-left:4px;font-size:11px" data-page-node-id="mbHyC4EUyydQFJ5nK9pXIZ">提醒</span><span class="pct-note" id="pctNote" data-page-node-id="CLaHWh1xr41UBHvqMn9XyX"></span></div>
-      <span class="lab" data-page-node-id="1PfaMHCQCNWqTFjhfLz9C3">单品种阈值</span>
-      <div class="alert-tabs" id="alertThTabs" data-page-node-id="1BAgLaHDHDkpXOKnDiFxyI">
+    </div>
+    <div class="th-toggle" id="thToggle" data-act="toggleThPanel" title="点击展开 / 收起单品种阈值">
+      <span class="th-caret" id="thCaret">▸</span>
+      <span class="lab">单品种阈值</span>
+      <span class="hint" id="thSummary"></span>
+    </div>
+    <div class="th-panel-wrap collapsed" id="thPanelWrap">
+      <div class="alert-tabs" id="alertThTabs" data-page-node-id="1BAgLaHDHDkpXOKnDiFxyI" style="margin:0 0 6px 10px;">
         <button type="button" data-act="setAlertThTab" data-args='["fund"]' class="active" data-page-node-id="uYQCawF6JDI5nVkpOxz5A6">基金 <span class="cnt" id="cntFund" data-page-node-id="a1F8cRjpSowsrErNi1ce0V">0</span></button>
         <button type="button" data-act="setAlertThTab" data-args='["stock"]' data-page-node-id="NAHQh1GmmaBoFQDOSkEvpb">股票 <span class="cnt" id="cntStock" data-page-node-id="i8dG7R5JqXfDucUriJH5gB">0</span></button>
       </div>
-      <span class="hint" data-page-node-id="J5dsGAvSfuvPucX5k7aYFH">留空 = 用全局阈值</span>
-    </div>
-    <div class="alert-panel active" id="alertFundPanel" data-page-node-id="CzJvK8puMsVxxVfYUAx2u4">
-      <div class="fund-th" id="fundThList" data-page-node-id="KUi3Sx0og5BT1X6eSMZ2Wk"></div>
-    </div>
-    <div class="alert-panel" id="alertStockPanel" data-page-node-id="GglULZsn3hDBFu515cfGxC">
-      <div class="fund-th" id="stockThList" data-page-node-id="SZgZvACDr7Bmr5tuj1gx0K"></div>
-    </div>
-
-    <div class="ops" style="display:flex;justify-content:flex-end;gap:10px;margin:10px 0 16px;" data-page-node-id="msfcv6cVJcE6jla8gfFXPp">
-      <button class="btn blue" id="saveAlertBtn" data-act="saveAlertSettings" data-page-node-id="tQ5na1IV10gcf66u3fTuw0">保存设置</button>
+      <div class="alert-panel active" id="alertFundPanel" data-page-node-id="CzJvK8puMsVxxVfYUAx2u4">
+        <div class="fund-th" id="fundThList" data-page-node-id="KUi3Sx0og5BT1X6eSMZ2Wk"></div>
+      </div>
+      <div class="alert-panel" id="alertStockPanel" data-page-node-id="GglULZsn3hDBFu515cfGxC">
+        <div class="fund-th" id="stockThList" data-page-node-id="SZgZvACDr7Bmr5tuj1gx0K"></div>
+      </div>
+      <div class="hint" style="padding:4px 10px 6px;font-size:11px;color:var(--muted);">留空 = 用全局阈值</div>
     </div>
 
-    <h3 style="display:flex;justify-content:space-between;align-items:center;" data-page-node-id="m4ib8ZbS92eLfYOpape5my">提醒记录
+    <!-- v164 卡片显示：勾掉即整块隐藏，不再占位 -->
+    <div class="set-cat">卡片显示</div>
+    <div class="alert-chks alert-inline" id="cardVisRow" style="border-top:none;">
+      <label class="chk"><input type="checkbox" id="visOv" data-evt="change" data-act="onAlertChange">持仓总览（市值 / 盈亏 / 7日曲线）</label>
+      <label class="chk"><input type="checkbox" id="visIdx" data-evt="change" data-act="onVisIdxChange" data-args='["event"]'>指数快照<span class="hint" id="visIdxHint" style="font-size:11px;color:var(--muted)"></span></label>
+      <label class="chk"><input type="checkbox" id="visZd" data-evt="change" data-act="onAlertChange">涨跌 / 板块资金</label>
+      <label class="chk"><input type="checkbox" id="visFund" data-evt="change" data-act="onAlertChange">我的基金</label>
+      <label class="chk"><input type="checkbox" id="visStock" data-evt="change" data-act="onAlertChange">我的股票</label>
+    </div>
+
+    <!-- v164 数据管理（从批量编辑弹窗迁入） -->
+    <div class="set-cat">数据管理</div>
+    <div class="alert-chks alert-inline" id="dataOpsRow" style="border-top:none;">
+      <button class="btn teal" data-act="exportData" title="导出全部持仓为 JSON 备份文件">导出</button>
+      <button class="btn teal" data-act="clickImportFile" title="从 JSON 备份文件导入持仓">导入</button>
+      <button class="btn ghost" data-act="clearAllRealized" title="把所有基金与股票的「已实现盈亏 / 操作次数」清零（清测试残留用）">清空已实现</button>
+    </div>
+
+    </div><!-- /.modal-body -->
+    <div class="ops" id="setFooterOps" style="margin-top:14px;border-top:1px dashed var(--border);padding-top:12px;">
+      <button class="btn ghost" id="idxEntryBtn" data-act="openIdxConfig" title="指数卡片显示设置">指数卡片显示</button>
+      <div class="ops-right">
+        <button class="btn blue" id="saveAlertBtn" data-act="saveAlertSettings">保存设置</button>
+        <button class="btn ghost" data-act="closeSettings">关闭</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 提醒弹窗（仅记录，从原「提醒设置」拆出） -->
+<div class="mask" id="maskAlert" data-page-node-id="85trEIqTFnWqDKTXnfzGro">
+  <div class="modal" style="width:440px;max-width:94vw;" data-page-node-id="alertRecMsk1">
+    <h3 style="display:flex;justify-content:space-between;align-items:center;" data-page-node-id="m4ib8ZbS92eLfYOpape5my">提醒
       <span class="link" data-act="clearAlertLog" data-page-node-id="LWoDBtykeprghUYCdFtTgm">清空</span></h3>
     <div class="alert-log" id="alertLog" data-page-node-id="721zUMaITfVQjfX9SL4gZa"></div>
-    </div><!-- /.modal-body -->
     <div class="ops" style="margin-top:14px;border-top:1px dashed var(--border);padding-top:12px;" data-page-node-id="TGqM0qkdyW6hyVP9cvMr6V"><button class="btn ghost" data-act="closeAlerts" data-page-node-id="jSZ2ITTuxvmZApltNR4WvK">关闭</button></div>
   </div>
 </div>

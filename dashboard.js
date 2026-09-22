@@ -478,11 +478,13 @@ function getIdxItem(code){ return IDX_ALL.find(function(x){ return x.code === co
 function resetIdxConfig(){
   saveIdxConfig(DEFAULT_IDX.slice());
   openIdxConfig();
+  applyCardVis();   /* v164 联动：立即生效，不等刷新 */
   refreshAll();
 }
 function selectNoneIdxConfig(){
   saveIdxConfig([]);
   openIdxConfig();
+  applyCardVis();   /* v164 联动：全不选 → 指数快照整块隐藏 */
   refreshAll();
 }
 
@@ -590,9 +592,44 @@ function toggleIdx(code, e){
     var names = cfg.map(function(c){ var it = getIdxItem(c); return it ? it.label : c; }).join(' / ');
     sub.textContent = names || '未选择';
   }
+  applyCardVis();   /* v164 联动：选满/清空立即生效 */
   refreshAll();
 }
 function closeIdxConfig(){ $('#maskIdxConfig').classList.remove('show'); }
+
+/* v164 二级菜单：卡片显示→指数快照——勾选即弹出「指数显示设置」让用户必选内容；
+   不勾选则不弹窗，并把指数选择置为全不选（卡片随之整块隐藏） */
+/* 「指数卡片显示」入口按钮：未勾选「指数快照」时置灰不可点（v164） */
+function syncIdxEntryBtn(){
+  var btn = document.getElementById('idxEntryBtn');
+  if(!btn) return;
+  /* 弹窗打开时以复选框为准（编辑中的意图），否则以已存设置（cardVis().idx）为准
+     —— 复选框初值由 openSettings 回填，启动阶段直接读会恒为未勾选 */
+  var mask = document.getElementById('maskSettings');
+  var editing = !!(mask && mask.classList.contains('show'));
+  var cb = document.getElementById('visIdx');
+  var on = (editing && cb) ? cb.checked : cardVis().idx;
+  btn.disabled = !on;
+  btn.title = on ? '指数卡片显示设置' : '需先勾选上方「指数快照」';
+}
+function onVisIdxChange(e){
+  var el = e && e.target ? e.target : document.getElementById('visIdx');
+  var on = el ? el.checked : false;
+  onAlertChange();   /* 保持「保存设置」未保存拦截状态一致 */
+  if(on){
+    /* 此前取消勾选已清空为「全不选」，重新勾选时回填默认 7 个（沪深主板/沪深300/创业板指/
+       科创50/中证500/恒生科技/国际金价），用户可在面板里再调整 */
+    if(loadIdxConfig().length === 0){ saveIdxConfig(DEFAULT_IDX.slice()); }
+    openIdxConfig();
+    applyCardVis();
+    refreshAll();
+  }else{
+    saveIdxConfig([]);
+    applyCardVis();  /* 全不选 → 指数区含标题立即隐藏 */
+    refreshAll();
+  }
+  syncIdxEntryBtn();
+}
 
 /* ================= 渲染：涨跌家数 =================
    口径说明：东财 ulist.np 的 f104/f105/f106 是按「证券所属交易所」全量统计，
@@ -1001,27 +1038,11 @@ function bkScheduleAutoRetry(){
   }, 45000);   /* 45s 后静默补拉一次；仍空则 loadBkCards 内再次 schedule */
 }
 
-/* ================= 卡片折叠（涨跌家数 / 领涨 / 领跌） ================= */
-// 注意：v2 起弃用 v1。v1 在 v107→v108→...→v114 反复折腾板块卡期间被冻结，
-// 残留了 v107 时期的 bkUp/bkDown 折叠态以及 v109 合并期引入的 bk 键，
-// 回滚 v107 后旧折叠态会误把 #bkUp/#bkDown 隐藏（用户报"不返回数据"）。
-// v3（v127）：两张板块卡（bkUp/bkDown）合并为单卡 bk，升 v3 重置折叠态，保证默认展开。
-var CARD_FOLD_KEY = 'fund_board_card_fold_v3';
-var CARD_FOLD_KEYS = ['zd','bk'];
-var BK_CHART_DEFAULT_H = 236;   /* 左卡收起时右卡图表的默认高度（对应右卡总高约 379） */
-function loadCardFold(){
-  try{
-    var raw = localStorage.getItem(CARD_FOLD_KEY);
-    if(raw){
-      var obj = JSON.parse(raw);
-      if(obj && typeof obj === 'object') return obj;
-    }
-  }catch(e){}
-  return {};
-}
-function saveCardFold(obj){
-  try{ localStorage.setItem(CARD_FOLD_KEY, JSON.stringify(obj)); }catch(e){}
-}
+/* ================= 卡片折叠已移除（v164b） =================
+   「今日涨跌家数」「板块资金流」两卡的 收起/展开 按钮取消，两卡常显。
+   历史折叠态键 fund_board_card_fold_v3 在启动时清除（见文件尾部）。
+   保留 BK_CHART_DEFAULT_H：fitBkHeight 高度配平仍用（含卡片显示隐藏时的回退）。 */
+var BK_CHART_DEFAULT_H = 236;
 /* 板块资金流卡自动配平左侧「今日涨跌家数」卡高度（v149）
    目的：两卡严格等高 → 收起/展开任一张时下方内容不再跳动。
    做法：把图表容器高度临时归零量出右卡「除图表外」的自然高，
@@ -1051,6 +1072,13 @@ function fitBkHeight(){
     chart.style.height = '0px';                             /* 归零量自然高（含负 margin） */
     var natural = right.getBoundingClientRect().height;
     var target = left.getBoundingClientRect().height;
+    if(target < 10){          /* 左卡整卡被「卡片显示」隐藏：无目标高度可配平 */
+      if(prev !== BK_CHART_DEFAULT_H + 'px'){
+        chart.style.height = BK_CHART_DEFAULT_H + 'px';
+        if(typeof bkChart !== 'undefined' && bkChart){ bkChart.resize(); }
+      }
+      return;
+    }
     var h = Math.round(target - natural);
     if(!isFinite(h) || h < 140) h = 140;                    /* 下限：保证柱区仍可读 */
     if(h > 460) h = 460;
@@ -1059,30 +1087,49 @@ function fitBkHeight(){
   }catch(e){}
 }
 
-function applyCardFold(key){
-  var fold = loadCardFold();
-  var collapsed = !!fold[key];
-  var body = $('[data-fold-body="' + key + '"]');
-  var btn = document.querySelector('[data-act="toggleCard"][data-args*=\'"' + key + '"\']');
-  if(body) body.style.display = collapsed ? 'none' : '';
-  if(btn) btn.textContent = collapsed ? '展示' : '收起';
-  /* 展开后 ECharts 需重算尺寸：折叠时容器宽高为 0，不 resize 会画成空白/错位 */
-  if(!collapsed){
-    setTimeout(function(){
-      try{ if(chartInstance) chartInstance.resize(); }catch(e){}
-      try{ if(bkChart) bkChart.resize(); }catch(e){}
-      fitBkHeight();
-    }, 0);
-  }
+/* ================= 卡片显示/隐藏（v164 设置→卡片显示） =================
+   与「折叠」不同：勾掉 = 整块 display:none 不占位。默认全显示，
+   选择随 alerts.settings.cardVis 一起存 localStorage。 */
+var CARD_VIS_KEYS = ['ov','idx','zd','fund','stock'];
+var CARD_VIS_CB = {ov:'visOv', idx:'visIdx', zd:'visZd', fund:'visFund', stock:'visStock'};
+function cardVis(){
+  var s = alerts.settings.cardVis;
+  if(!s || typeof s !== 'object') s = {};
+  var out = {};
+  CARD_VIS_KEYS.forEach(function(k){ out[k] = s[k] !== false; });
+  return out;
 }
-function applyAllCardFold(){
-  CARD_FOLD_KEYS.forEach(function(k){ applyCardFold(k); });
-}
-function toggleCard(key){
-  var fold = loadCardFold();
-  fold[key] = !fold[key];
-  saveCardFold(fold);
-  applyCardFold(key);
+function applyCardVis(){
+  var vis = cardVis();
+  var isWidget = document.body.classList.contains('widget-mode');
+  /* 第一行总览三卡（持仓市值 / 今日盈亏 / 7日收益曲线）—— 合并为一个开关（v164） */
+  var row1 = document.querySelector('.row1');
+  if(row1) row1.style.display = vis.ov ? '' : 'none';
+  /* 指数快照行 + 区标题：与「指数显示设置」联动——未选任何指数时整块隐藏（v164） */
+  var idxOn = vis.idx && loadIdxConfig().length > 0;
+  var idxRow = document.getElementById('idxRow');
+  if(idxRow) idxRow.style.display = idxOn ? '' : 'none';
+  var idxTitle = document.getElementById('idxSecTitle');
+  if(idxTitle) idxTitle.style.display = idxOn ? '' : 'none';
+  /* 联动提示：开关开着但一个指数都没选时，在复选框旁说明原因 */
+  var idxHint = document.getElementById('visIdxHint');
+  if(idxHint) idxHint.textContent = (vis.idx && !idxOn) ? '（未选任何指数，暂不显示）' : '';
+  /* 第三行：涨跌家数 + 资金流向图 + 板块资金流 —— 合并为一个开关（v164） */
+  var row3 = document.querySelector('.row3');
+  if(row3) row3.style.display = vis.zd ? '' : 'none';
+  /* 持仓明细两区（v164）：我的基金 / 我的股票 */
+  var fsec = document.getElementById('fundSection');
+  if(fsec) fsec.style.display = vis.fund ? '' : 'none';
+  var ssec = document.getElementById('stockSection');
+  if(ssec) ssec.style.display = vis.stock ? '' : 'none';
+  /* 入口按钮可用性（未勾选「指数快照」时置灰） */
+  syncIdxEntryBtn();
+  /* 重新显示后容器尺寸变化，ECharts 需 resize 重画 */
+  setTimeout(function(){
+    try{ if(zdFlowChart) zdFlowChart.resize(); }catch(e){}
+    try{ if(bkChart) bkChart.resize(); }catch(e){}
+    fitBkHeight();
+  }, 0);
 }
 
 /* ================= 渲染：持仓与汇总 ================= */
@@ -1784,7 +1831,7 @@ async function refreshAll(){
     /* 恢复按钮 + 清并发锁。无论 refreshAll 内部是否抛错都执行 */
     _refreshing = false;
     if(_rBtn){ _rBtn.disabled = false; _rBtn.innerHTML = _rBtnHtml || '<svg viewBox="0 0 24 24" style="width:16px;height:16px;fill:currentColor"><path d="M17.65 6.35C16.2 4.9 14.21 4 12 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08c-.82 2.33-3.04 4-5.65 4-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"/></svg>'; }
-    applyAllCardFold();
+    applyCardVis();
     setTimeout(fitBkHeight, 0);
     applyPrivacyMask(); /* v1.1.2 隐私打码：刷新重写数值后重新遮罩 */
   }
@@ -3928,20 +3975,30 @@ document.addEventListener('visibilitychange', function(){
 });
 
 /* 提醒面板 */
+/* 提醒弹窗（仅记录）：拆分后不再承载任何设置项，只渲染提醒记录并把未读标为已读 */
 function openAlerts(){
+  renderAlertLog();
+  $('#maskAlert').classList.add('show');
+  /* 打开面板即全部已读 */
+  alerts.log.forEach(function(x){ x.read = true; });
+  saveAlerts();
+  setTimeout(updateAlertBadge, 300);
+}
+/* 设置弹窗：集中承载原「提醒设置」里的所有配置项（公告开关 / 桌面通知 / 自动刷新 / 汇率折算 / 全局·单品种阈值） */
+function openSettings(){
   $('#setPct').value = alerts.settings.pct;
   $('#setAuto').value = String(alerts.settings.autoMin || 0);
   $('#setNotice').checked = !!alerts.settings.notice;
   $('#setStockNotice').checked = alerts.settings.stockNotice !== false;  /* 默认 true，老用户升级启用 */
   $('#setSound').checked = !!alerts.settings.sound;
   $('#setNotify').checked = !!alerts.settings.notify;
-  $('#setCommRateW').value = (alerts.settings.commRateW != null) ? alerts.settings.commRateW : 2.5;
-  $('#setMinComm').value = (alerts.settings.minComm != null) ? alerts.settings.minComm : 5;
-  $('#setStampTaxW').value = (alerts.settings.stampTaxW != null) ? alerts.settings.stampTaxW : 5;
-  $('#setFundRateW').value = (alerts.settings.fundRateW != null) ? alerts.settings.fundRateW : 10;
   /* v156 手填汇率：空 = 自动获取（值存 alerts.settings.fxUSD / fxHKD） */
   $('#setFxUSD').value = (alerts.settings.fxUSD != null && alerts.settings.fxUSD !== '') ? alerts.settings.fxUSD : '';
   $('#setFxHKD').value = (alerts.settings.fxHKD != null && alerts.settings.fxHKD !== '') ? alerts.settings.fxHKD : '';
+  /* v164 卡片显示复选框回填 */
+  var _vis = cardVis();
+  Object.keys(CARD_VIS_CB).forEach(function(k){ var el = document.getElementById(CARD_VIS_CB[k]); if(el) el.checked = _vis[k]; });
+  syncIdxEntryBtn();
   var _fh = $('#fxLiveHint');
   if(_fh){
     _fh.textContent = '当前 1 USD=' + fxOf('USD').toFixed(4) + ' · 1 HKD=' + fxOf('HKD').toFixed(4) + ' CNY（' + fxSrcOf('USD') + '）';
@@ -3952,16 +4009,24 @@ function openAlerts(){
   renderAlertRows();
   /* 默认切回基金 tab（避免上次手动切到股票忘了切回去） */
   setAlertThTab('fund');
-  renderAlertLog();
+  /* 单品种阈值面板：有自定义设置（阈值/已关提醒）才默认展开，否则收起只留摘要 */
+  var hasCustom = thCustomCount() > 0;
+  $('#thPanelWrap').classList.toggle('collapsed', !hasCustom);
+  $('#thToggle').classList.toggle('open', hasCustom);
+  updateThSummary();
   updatePctHint();
   updateNotifyState();
-  $('#maskAlert').classList.add('show');
+  $('#maskSettings').classList.add('show');
   window._alertSnap = serializeAlertForm();
   updateSaveBtn();
-  /* 打开面板即全部已读 */
-  alerts.log.forEach(function(x){ x.read = true; });
-  saveAlerts();
-  setTimeout(updateAlertBadge, 300);
+}
+/* 关闭设置弹窗：检测未保存修改，避免误关丢失配置 */
+function closeSettings(){
+  if(window._alertSnap !== undefined && window._alertSnap !== serializeAlertForm()){
+    if(!confirm('有未保存的修改，确定关闭吗？')) return;
+  }
+  $('#maskSettings').classList.remove('show');
+  syncIdxEntryBtn();   /* 放弃未保存修改后，入口按钮状态回归已存设置 */
 }
 /* 单品种阈值 tab 切换：基金 <-> 股票 */
 function setAlertThTab(kind){
@@ -3969,6 +4034,38 @@ function setAlertThTab(kind){
   tabs.forEach(function(btn){ btn.classList.toggle('active', btn.getAttribute('data-args') === '["' + kind + '"]'); });
   document.getElementById('alertFundPanel').classList.toggle('active', kind === 'fund');
   document.getElementById('alertStockPanel').classList.toggle('active', kind === 'stock');
+}
+/* v164 单品种阈值折叠：点头部展开/收起 */
+function toggleThPanel(){
+  var wrap = $('#thPanelWrap');
+  var collapsed = wrap.classList.toggle('collapsed');
+  $('#thToggle').classList.toggle('open', !collapsed);
+}
+/* 统计已做的单品种自定义：单独设了阈值 + 关了提醒的数量 */
+function thCustomCount(){
+  var n = 0;
+  var fo = alerts.settings.overrides || {}, so = alerts.settings.stockOverrides || {};
+  var fm = alerts.settings.fundMuted || {}, sm = alerts.settings.stockMuted || {};
+  Object.keys(fo).forEach(function(k){ if(fo[k] !== null && fo[k] !== '' && fo[k] !== undefined) n++; });
+  Object.keys(so).forEach(function(k){ if(so[k] !== null && so[k] !== '' && so[k] !== undefined) n++; });
+  Object.keys(fm).forEach(function(k){ if(fm[k]) n++; });
+  Object.keys(sm).forEach(function(k){ if(sm[k]) n++; });
+  return n;
+}
+function updateThSummary(){
+  var el = $('#thSummary');
+  if(!el) return;
+  var fo = alerts.settings.overrides || {}, so = alerts.settings.stockOverrides || {};
+  var fm = alerts.settings.fundMuted || {}, sm = alerts.settings.stockMuted || {};
+  var thN = Object.keys(fo).filter(function(k){ return fo[k] !== null && fo[k] !== '' && fo[k] !== undefined; }).length
+          + Object.keys(so).filter(function(k){ return so[k] !== null && so[k] !== '' && so[k] !== undefined; }).length;
+  var muteN = Object.keys(fm).filter(function(k){ return fm[k]; }).length
+            + Object.keys(sm).filter(function(k){ return sm[k]; }).length;
+  if(thN === 0 && muteN === 0){ el.textContent = '未设置，全部用全局阈值'; return; }
+  var parts = [];
+  if(thN > 0) parts.push('已设阈值 ' + thN + ' 个');
+  if(muteN > 0) parts.push('已关提醒 ' + muteN + ' 个');
+  el.textContent = parts.join(' · ');
 }
 function renderAlertLog(){
   var html = '';
@@ -4520,6 +4617,7 @@ function toggleRowMute(kind, code, muted){
   var row = inp.closest('.row');
   if(!row) return;
   row.classList.toggle('is-muted', muted);
+  updateThSummary();   /* v164：停/恢复提醒后刷新折叠头摘要 */
   var act = row.querySelector('.row-act');
   if(!act) return;
   var muteTag = kind === 'fund' ? 'muteFundAlert' : 'muteStockAlert';
@@ -4531,10 +4629,8 @@ function toggleRowMute(kind, code, muted){
     act.innerHTML = '<span class="x" title="仅停止该' + what + '的涨跌提醒（持仓保留）" data-act="' + muteTag + '" data-args=\'["' + code + '"]\'>关闭提醒</span>';
   }
 }
+/* 提醒弹窗（仅记录）关闭：不在弹窗内承载设置项，无需未保存检测 */
 function closeAlerts(){
-  if(window._alertSnap !== undefined && window._alertSnap !== serializeAlertForm()){
-    if(!confirm('有未保存的修改，确定关闭吗？')) return;
-  }
   $('#maskAlert').classList.remove('show'); updateAlertBadge();
 }
 /* 打赏弹窗（点击顶部「打赏」按钮弹出，显示微信赞赏码） */
@@ -4593,6 +4689,11 @@ function serializeAlertForm(){
     fundRateW: $('#setFundRateW').value,
     fxUSD: $('#setFxUSD').value,
     fxHKD: $('#setFxHKD').value,
+    visOv: $('#visOv').checked,
+    visIdx: $('#visIdx').checked,
+    visZd: $('#visZd').checked,
+    visFund: $('#visFund').checked,
+    visStock: $('#visStock').checked,
     ov: ov,
     stkOv: stkOv
   });
@@ -4705,6 +4806,10 @@ async function saveAlertSettings(){
   var fxHKD = parseFloat($('#setFxHKD').value);
   alerts.settings.fxUSD = (isFinite(fxUSD) && fxUSD > 0) ? fxUSD : '';
   alerts.settings.fxHKD = (isFinite(fxHKD) && fxHKD > 0) ? fxHKD : '';
+  /* v164 卡片显示 */
+  var _cv = {};
+  CARD_VIS_KEYS.forEach(function(k){ var el = document.getElementById(CARD_VIS_CB[k]); if(el) _cv[k] = el.checked; });
+  alerts.settings.cardVis = _cv;
   var wantNotify = $('#setNotify').checked;
   if(wantNotify){
     /* 扩展原生通知：权限由 Chrome 在首次 create 时弹窗授予；这里只拦"已拒绝"的情况 */
@@ -4744,8 +4849,9 @@ async function saveAlertSettings(){
     if(!isNaN(v) && v > 0) stkOv[inp.getAttribute('data-scode')] = v;
   });
   alerts.settings.stockOverrides = stkOv;
-  saveAlerts(); applyAuto();
+  saveAlerts(); applyAuto(); applyCardVis();
   updateNotifyState();
+  updateThSummary();   /* v164：阈值/停提醒变动后刷新折叠头摘要 */
   window._alertSnap = serializeAlertForm();
   updateSaveBtn();
   toast('提醒设置已保存');
@@ -4794,7 +4900,8 @@ function importData(ev){
 updateAlertBadge();
 applyAuto();
 applyTheme();
-applyAllCardFold();
+applyCardVis();
+try{ localStorage.removeItem('fund_board_card_fold_v3'); }catch(e){}  /* v164b 移除卡片折叠，清历史折叠态 */
 refreshAll();
 
 /* 添加股票弹窗：输入代码实时识别品种 / 手动改类型标记 */
@@ -4811,6 +4918,7 @@ refreshAll();
 (function(){
   if(!/[?&]widget\b/.test(location.search)) return;
   document.body.classList.add('widget-mode');
+  applyCardVis();
   if(!alerts.settings.autoMin){ alerts.settings.autoMin = 1; saveAlerts(); }
   applyAuto();
 })();
