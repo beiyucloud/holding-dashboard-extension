@@ -1,5 +1,7 @@
 # Chrome 加载扩展时自动生成的规则索引缓存
 _metadata/
+# 回归探针在 ext/ 就地生成的预览页（_preview_kline.html / _preview_q2.html 等）
+_preview_*.html
 # macOS / Windows 杂项
 .DS_Store
 Thumbs.db

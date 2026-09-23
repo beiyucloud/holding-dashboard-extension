@@ -108,8 +108,19 @@ chrome.runtime.onMessage.addListener(function(msg, sender, sendResponse){
   (async function(){
     var referer = hostReferer(msg.url);
     // 东财系 push2 接口在 Chrome 实例冷启动后第一次容易被风控拒（socket hang up / ERR_EMPTY_RESPONSE），
-    // 间隔 600ms 重试一次通常能恢复；最多 3 次。
-    var delays = [0, 600, 1200];
+    // 间隔 600ms 重试一次通常能恢复；其余主机最多 3 次。
+    //
+    // v174：push2 系单独降为 2 次。本机对 push2*.eastmoney.com/api/qt/* 是「确定性 RST」——
+    //   TCP 握手 89ms、TLS 握手 146ms 都正常，请求一发出就被重置（100~220ms 内）；
+    //   实测连试 3 次全败、单接口白等约 2.2s，而一轮刷新要打 6~8 个这类接口，
+    //   前端于是要 30~40s 才把首屏填满（排在后面的卡片看着像「没数据」）。
+    //   第 3 次的边际收益≈0（前两次都在 200ms 内失败，多等 1200ms 不可能恢复），
+    //   砍掉它既省 1.4s，也少发一轮注定失败的请求（拦截本身带 IP 速率特征，少打反而更稳）。
+    //   push2 的路径/主机与前端「失败短路」相互独立：这里管「单次调用别死等」，
+    //   前端管「一轮内同一接口不再重复打」。
+    var isPush2Host = false;
+    try{ isPush2Host = /^(?:\d+\.)?push2(?:his|delay|ex)?\.eastmoney\.com$/.test(new URL(msg.url).hostname); }catch(_){}
+    var delays = isPush2Host ? [0, 600] : [0, 600, 1200];
     var lastErr = null;
     for(var i=0; i<delays.length; i++){
       if(delays[i] > 0) await new Promise(function(r){ setTimeout(r, delays[i]); });

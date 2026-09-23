@@ -110,5 +110,23 @@
       "urlFilter": "push2ex.eastmoney.com",
       "resourceTypes": ["xmlhttprequest", "other"]
     }
+  },
+  {
+    "id": 7,
+    "priority": 1,
+    "action": {
+      "type": "modifyHeaders",
+      "requestHeaders": [
+        {
+          "header": "referer",
+          "operation": "set",
+          "value": "https://fundf10.eastmoney.com/"
+        }
+      ]
+    },
+    "condition": {
+      "urlFilter": "fundf10.eastmoney.com",
+      "resourceTypes": ["xmlhttprequest", "other"]
+    }
   }
 ]

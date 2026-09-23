@@ -252,9 +252,92 @@
   tbody tr.total-row:hover td{background:var(--row-total);}
   tbody tr.total-row td:first-child{box-shadow:none;padding-left:10px;color:var(--text);}
 
+  /* ===== 个股详情弹窗（v166）：行情概览 + 分时/K线 ===== */
+  .modal.qmodal{width:720px;max-width:94vw;max-height:88vh;overflow-y:auto;}
+  .modal.qmodal h3 .qcode{font-size:12px;color:var(--muted);font-weight:400;margin-left:8px;}
+  .qhead{display:flex;align-items:baseline;gap:12px;margin:6px 0 12px;}
+  .qprice{font-size:26px;font-weight:700;letter-spacing:.4px;font-variant-numeric:tabular-nums;}
+  .qprice.up{color:var(--red);} .qprice.down{color:var(--green);}
+  .qchg{font-size:14px;font-weight:600;font-variant-numeric:tabular-nums;}
+  .qchg.up{color:var(--red);} .qchg.down{color:var(--green);} .qchg.muted{color:var(--muted);font-weight:400;}
+  .qtime{font-size:11px;color:var(--muted);margin-left:auto;}
+  .qtabs{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px;}
+  .qtab{background:var(--bg);border:1px solid var(--border);color:var(--muted);font-size:12px;padding:4px 13px;border-radius:6px;cursor:pointer;font-family:inherit;transition:.15s;}
+  .qtab:hover{color:var(--text);border-color:var(--muted);}
+  .qtab.active{background:rgba(79,140,255,.14);border-color:rgba(79,140,255,.45);color:var(--text);font-weight:600;}
+  .qchart{width:100%;height:250px;background:var(--chart-bg);border:1px solid var(--chart-border);border-radius:8px;}
+  .qempty{color:var(--muted);font-size:12px;padding:104px 0;text-align:center;}
+  .qstats{display:grid;grid-template-columns:repeat(4,1fr);gap:1px;background:var(--border);border:1px solid var(--border);border-radius:8px;margin-top:12px;overflow:hidden;}
+  .qstats .qs{background:var(--panel2);padding:7px 10px;display:flex;flex-direction:column;gap:3px;}
+  .qstats .qs-empty{grid-column:1 / -1;color:var(--muted);font-size:12px;text-align:center;padding:14px 0;}
+  .qstats .qsl{font-size:11px;color:var(--muted);}
+  .qstats .qsv{font-size:13px;font-weight:600;font-variant-numeric:tabular-nums;}
+  /* 持仓表里可点开的股票名 */
+  .qlink{cursor:pointer;border-bottom:1px dashed transparent;transition:.15s;}
+  .qlink:hover{color:var(--blue);border-bottom-color:var(--blue);}
+  /* v167：五档买卖盘 / 底部加减仓入口 / 基金区间标签行 */
+  .qtabsfund{display:none;}
+  .qtabsfund.on{display:flex;}
+  .q5{margin-top:12px;}
+  .q5t{font-size:11px;color:var(--muted);margin-bottom:6px;}
+  .q5g{display:grid;grid-template-columns:1fr 1fr;gap:1px;background:var(--border);border:1px solid var(--border);border-radius:8px;overflow:hidden;}
+  .q5c{background:var(--panel2);padding:7px 10px;}
+  .q5h{display:flex;justify-content:space-between;font-size:11px;color:var(--muted);margin-bottom:5px;}
+  .q5r{display:flex;align-items:baseline;gap:8px;font-size:12px;font-variant-numeric:tabular-nums;padding:2px 0;line-height:1.5;}
+  .q5r .lv{color:var(--muted);font-size:11px;flex:none;width:24px;}
+  .q5r .pr{font-weight:600;flex:1;}
+  .q5r .pr.up{color:var(--red);} .q5r .pr.down{color:var(--green);}
+  .q5r .vl{color:var(--muted);font-size:11px;text-align:right;flex:none;}
+  .qops{display:flex;gap:16px;justify-content:flex-end;margin-top:12px;padding-top:10px;border-top:1px dashed var(--border);font-size:13px;}
+  .qops .link{font-weight:600;}
+  /* 场外基金详情主视图：净值走势 / 持仓明细 / 基金概况 */
+  .qfundmode{display:none;} .qfundmode.on{display:flex;margin-bottom:8px;}
+  .qfundpos,.qfundinfo,.qfundmgr{margin-top:12px;}
+  .qf-empty{color:var(--muted);font-size:12px;text-align:center;padding:26px 0;}
+  .qfp-head{display:flex;justify-content:space-between;align-items:baseline;gap:12px;font-size:12px;color:var(--muted);margin-bottom:8px;}
+  .qfp{width:100%;border-collapse:collapse;font-size:12.5px;font-variant-numeric:tabular-nums;}
+  .qfp th{background:var(--panel2);color:var(--muted);font-weight:500;font-size:11.5px;padding:7px 9px;text-align:right;border-bottom:1px solid var(--border);white-space:nowrap;}
+  .qfp th.l,.qfp td.l{text-align:left;}
+  .qfp td{padding:7px 9px;text-align:right;border-bottom:1px solid var(--border);}
+  .qfp tbody tr:last-child td{border-bottom:none;}
+  .qfp td.nm{font-weight:500;}
+  .qfp td.nm .cd{color:var(--muted);font-weight:400;margin-left:5px;font-size:11.5px;}
+  .qfp .up{color:var(--red);} .qfp .down{color:var(--green);} .qfp .flat{color:var(--muted);}
+  .qfp-foot{margin-top:9px;font-size:11px;color:var(--muted);line-height:1.65;}
+  .qfi{display:grid;grid-template-columns:repeat(2,1fr);gap:1px;background:var(--border);border:1px solid var(--border);border-radius:8px;overflow:hidden;}
+  .qfi .row{background:var(--panel2);padding:8px 11px;display:flex;gap:10px;align-items:baseline;}
+  .qfi .row.full{grid-column:1 / -1;}
+  .qfi .k{font-size:11.5px;color:var(--muted);flex:none;min-width:76px;}
+  .qfi .v{font-size:12.5px;font-weight:600;line-height:1.5;word-break:break-word;}
+  /* 基金经理详情（基金概况 → 点「基金经理人」进入的二级视图） */
+  .qmg-back{display:flex;align-items:center;gap:10px;margin-bottom:10px;}
+  .qmg-sec{display:flex;justify-content:space-between;align-items:baseline;gap:10px;font-size:12.5px;font-weight:600;margin:14px 0 8px;}
+  .qmg-sec .sub{font-size:11px;color:var(--muted);font-weight:400;}
+  .qmg-link{font-size:12.5px;font-weight:600;cursor:pointer;color:var(--blue);}
+  .qmg-link:hover{text-decoration:underline;}
+  .qmg-card{display:grid;grid-template-columns:76px 1fr;gap:12px;background:var(--panel2);border:1px solid var(--border);border-radius:8px;padding:12px;margin-bottom:8px;}
+  .qmg-photo{width:76px;height:76px;border-radius:8px;overflow:hidden;border:1px solid var(--border);background:var(--panel);}
+  .qmg-photo img{width:100%;height:100%;object-fit:cover;display:block;}
+  .qmg-photo .ph{width:100%;height:100%;display:flex;align-items:center;justify-content:center;font-size:24px;font-weight:600;color:var(--muted);}
+  .qmg-name{font-size:14px;font-weight:600;margin-bottom:6px;}
+  .qmg-kv{display:flex;gap:10px;font-size:12px;line-height:1.9;}
+  .qmg-kv .k{color:var(--muted);flex:none;}
+  .qmg-kv .v2{font-weight:600;}
+  .qmg-intro{grid-column:1 / -1;font-size:12.5px;line-height:1.75;border-top:1px dashed var(--border);padding-top:10px;margin-top:2px;}
+  .qmg-list{margin:8px 0 2px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
+  .qmg-tag{font-size:10.5px;padding:1px 7px;border-radius:20px;border:1px solid var(--border);color:var(--muted);white-space:nowrap;}
+  .qmg-wrap{max-height:240px;overflow:auto;border:1px solid var(--border);border-radius:8px;margin-top:8px;}
+  .qmg-wrap .qfp th{position:sticky;top:0;z-index:1;}
+  /* min-width 对 table-cell 无效，改用 th 内 inline-block 包裹（见 qTh()） */
+  .qfp th .nw{display:inline-block;white-space:nowrap;} 
   /* ===== 弹窗 ===== */
   .mask{position:fixed;inset:0;background:rgba(0,0,0,.55);display:none;align-items:center;justify-content:center;z-index:99;}
   .mask.show{display:flex;}
+  /* 弹窗层级：详情弹窗 110 < 交易弹窗 120 < 公告弹窗 130。
+     从详情弹窗里点「加仓 / 减仓」时，交易弹窗必须盖在详情之上，
+     否则两者同为 z-index:99、靠 DOM 顺序取胜，交易窗会被详情遮罩压在下面。 */
+  #maskQuote{z-index:110;}
+  #maskTrade{z-index:120;}
   .modal{background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:22px;width:380px;box-shadow:0 12px 48px rgba(0,0,0,.45);}
   .modal h3{font-size:16px;margin-bottom:4px;display:flex;align-items:center;justify-content:space-between;}
   .modal h3 .close-x{font-size:18px;color:var(--muted);cursor:pointer;line-height:1;padding:2px 6px;border-radius:4px;transition:.15s;}
@@ -519,8 +602,22 @@
   .donate-qr{width:168px;height:168px;object-fit:contain;}
   .donate-qr-fallback{font-size:76px;line-height:1;color:var(--muted);display:none;}
   .donate-channel{display:inline-block;margin-top:12px;font-size:12px;color:var(--muted);padding:3px 14px;border:1px solid var(--border);border-radius:14px;letter-spacing:.5px;}
+  .donate-rate{display:block;margin:14px auto 0;font-size:12px;color:var(--blue);text-decoration:none;letter-spacing:.3px;}
+  .donate-rate:hover{text-decoration:underline;}
   .donate-qr-wrap.noimg .donate-qr{display:none;}
   .donate-qr-wrap.noimg .donate-qr-fallback{display:flex;}
+
+  /* ===== 好评浮窗（右下角简版，v165）=====
+     常驻右下角的小卡，引导到 Edge 加载项商店评价。点「×」/ 点过链接只是
+     「暂停提示」一段时间，不是永久关闭——误点有回头路，也不会天天刷脸。 */
+  .rate-float{position:fixed;right:18px;bottom:18px;z-index:60;width:238px;background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:12px 14px 13px;box-shadow:0 10px 28px rgba(0,0,0,.3);}
+  .rate-float[hidden]{display:none;}
+  .rate-float .rf-title{font-size:13px;font-weight:600;letter-spacing:.3px;padding-right:18px;}
+  .rate-float .rf-link{display:inline-block;margin-top:6px;font-size:12px;color:var(--blue);text-decoration:none;letter-spacing:.3px;}
+  .rate-float .rf-link:hover{text-decoration:underline;}
+  .rate-float .rf-x{position:absolute;top:5px;right:6px;width:20px;height:20px;display:flex;align-items:center;justify-content:center;border:none;border-radius:5px;background:transparent;color:var(--muted);font-size:15px;line-height:1;padding:0;cursor:pointer;}
+  .rate-float .rf-x:hover{color:var(--text);background:var(--btn);}
+  body.widget-mode .rate-float{display:none;}   /* 392px 桌面窄组件：不弹 */
 
   /* ===== 桌面组件模式（?widget 打开）===== */
   body.widget-mode{ width:392px; min-width:0; max-width:392px; padding:8px 10px; overflow-y:auto; overflow-x:hidden; scrollbar-gutter:stable; }
@@ -804,7 +901,7 @@
 <div class="row3" data-page-node-id="GbIQK3qrBFMpPKgjCGukaO">
   <div class="card" data-page-node-id="XYEH84eTSwGnWL4jD5tB1C">
     <div class="label label-flex" data-page-node-id="yrkfBP4Vmx3njDX5AnvR4U">
-      <span data-page-node-id="izFOt9EDIApqNOI1Xb2SDm">今日涨跌家数（沪深京全市场）</span>
+      <span id="zdTitle" data-page-node-id="izFOt9EDIApqNOI1Xb2SDm">今日涨跌家数（沪深京全市场）</span>
     </div>
     <div data-fold-body="zd" data-page-node-id="sjDxWraCJ9cHW2qrmtTet4">
       <div class="zd-num" data-page-node-id="G1epWc4aSqjADT286hn2CJ">
@@ -821,7 +918,7 @@
       <div class="sub" id="zdSub" data-page-node-id="ETSEhpDRTsHI1hFgC3seHH">上涨 -- · 下跌 --</div>
       <div class="sub" id="zdDetail" style="margin-top:3px;font-size:11px;line-height:1.6;" data-page-node-id="Dqnh19WHtWVF3Vdr2ODVkg"></div>
       <div class="zd-flow">
-        <div class="zd-flow-head"><span>实时资金流向图（净流入）</span><span class="muted" style="font-weight:400;font-size:11px">单位：元 · 沪深两市合计 · 东财</span></div>
+        <div class="zd-flow-head"><span>实时资金流向图（净流入）</span><span class="muted" id="zdFlowSrc" style="font-weight:400;font-size:11px">单位：亿元 · 沪深两市合计 · 东财（主力 / 超大 / 大 / 中 / 小 五线）</span></div>
         <div class="zd-flow-chart" id="zdFlow"></div>
         <div class="zd-flow-legend" id="zdFlowLegend"></div>
       </div>
@@ -878,8 +975,8 @@
 </div>
 
 <div class="footer" data-page-node-id="5mzn8eeIKhJiHZZYyCZBUS">
-  <div data-page-node-id="zUp8qF5bZSbN5uoUBsDvh0">看板版本 v164（2026-09-22）· 数据通道：<span id="srcStatus" data-page-node-id="z1wYSVq2SDR3rGEc2DuS8q">检测中…</span>（若有 ✗ 请刷新重试）· <a href="https://beiyucloud.taoxinyuan.com" target="_blank" rel="noopener noreferrer" style="color:var(--blue);text-decoration:none" data-page-node-id="DdTbDsjtUyJZgVdPL14zdg">持仓实时盈亏看板</a> · <a href="privacy.html" target="_blank" rel="noopener noreferrer" style="color:var(--blue);text-decoration:none" data-page-node-id="FefdJe82QUh4pQusOzTsHG">隐私政策</a></div>
-  数据来源：新浪财经（盘中实时估算）· 天天基金移动端接口（净值/重仓股）· 腾讯行情（指数）· 东方财富（个股实时行情 / 涨跌家数 / 行业板块 / 国际金价 / 离岸人民币汇率）。<br data-page-node-id="PZMJhv4er1FN8SaVQfTn8n">
+  <div data-page-node-id="zUp8qF5bZSbN5uoUBsDvh0">看板版本 v176（2026-09-23）· 数据通道：<span id="srcStatus" data-page-node-id="z1wYSVq2SDR3rGEc2DuS8q">检测中…</span>（若有 ✗ 请刷新重试）· <a href="https://beiyucloud.taoxinyuan.com" target="_blank" rel="noopener noreferrer" style="color:var(--blue);text-decoration:none" data-page-node-id="DdTbDsjtUyJZgVdPL14zdg">持仓实时盈亏看板</a> · <a href="privacy.html" target="_blank" rel="noopener noreferrer" style="color:var(--blue);text-decoration:none" data-page-node-id="FefdJe82QUh4pQusOzTsHG">隐私政策</a></div>
+  数据来源：新浪财经（盘中实时估算；大盘资金流向图的备用源）· 天天基金移动端接口（净值/重仓股）· 腾讯行情（指数 / 国际金价）· 同花顺（涨跌家数的备用源，沪深两市口径）· 东方财富（个股实时行情 / 涨跌家数 / 行业板块 / 国际金价 / 离岸人民币汇率）。涨跌家数与大盘资金流向图都按「东财优先、备用源兜底」取数，备用源生效时卡片上会标注实际来源与口径。<br data-page-node-id="PZMJhv4er1FN8SaVQfTn8n">
   计算口径：美股 / 港股按实时汇率折算为人民币后计入总市值与盈亏（可在「提醒设置 → 汇率折算」手填覆盖）；录入口径：成本价与加仓 / 减仓成交价一律按原币填写（港股港元 HK$、美股美元 $），不要换算成人民币填；填份额时 今日盈亏 = 份额 ×（估算净值 − 昨日净值）（盘中/盘后显示实时估算）；持有收益率 = 已结算市值 ÷（份额 × 成本价）− 1，净值未公布时沿用上一交易日确认净值、不随盘中估值跳动，净值公布后自动更新；未填份额时按「持有市值 × 估算涨幅」近似。<br data-page-node-id="nmwS0MHOUCZIY8BU70uad3">
   「实时估算」为新浪基于基金前十大重仓股/债券/ETF 的加权估算（分钟级）；「重仓估算」为本页按前十大重仓股实时行情的自建兜底估算。估算均基于上季持仓，与实际净值有偏差，仅供参考。<br data-page-node-id="CDL3UwBopiRFtyToi6tonR">
   本看板仅为信息整理工具，不构成投资建议。市场有风险，投资需谨慎。
@@ -1250,7 +1347,7 @@
 </div>
 
 <!-- 公告详情弹窗（点提醒记录里公告行弹出，扩展内 fetch 详情 → loading → 渲染正文；失败兜底给原文链接） -->
-<div class="mask" id="maskNotice" style="z-index:100;" data-page-node-id="HFbjKZbjkw5nU65mpR9yZs">
+<div class="mask" id="maskNotice" style="z-index:130;" data-page-node-id="HFbjKZbjkw5nU65mpR9yZs">
   <div class="modal notice-modal" data-page-node-id="8tjpAy7wtNHyBZSOOFLkxZ">
     <h3 id="noticeTitle" data-page-node-id="zuFMjF6Vp4A5lCZzfUxaa6">公告详情</h3>
     <div class="notice-meta" id="noticeMeta" data-page-node-id="GAmqsLgARkMAOsF5OnkAw2"></div>
@@ -1267,6 +1364,47 @@
 </div>
 
 <!-- 打赏弹窗 -->
+<!-- v166 个股详情弹窗：点持仓里的股票名字打开（行情概览 + 分时/5日/日K/周K/月K） -->
+<div class="mask" id="maskQuote">
+  <div class="modal qmodal">
+    <h3><span><span id="qName">--</span><span class="qcode" id="qCode"></span></span><span class="close-x" data-act="closeQuote" title="关闭">×</span></h3>
+    <div class="qhead">
+      <span class="qprice" id="qPrice">--</span>
+      <span class="qchg" id="qChg"></span>
+      <span class="qtime" id="qTime"></span>
+    </div>
+    <div class="qtabs" id="qTabs">
+      <button class="qtab active" data-kind="min" data-act="qTab" data-args='["min"]'>分时</button>
+      <button class="qtab" data-kind="min5" data-act="qTab" data-args='["min5"]'>5日</button>
+      <button class="qtab" data-kind="day" data-act="qTab" data-args='["day"]'>日K</button>
+      <button class="qtab" data-kind="week" data-act="qTab" data-args='["week"]'>周K</button>
+      <button class="qtab" data-kind="month" data-act="qTab" data-args='["month"]'>月K</button>
+      <button class="qtab" data-kind="season" data-act="qTab" data-args='["season"]'>季K</button>
+      <button class="qtab" data-kind="year" data-act="qTab" data-args='["year"]'>年K</button>
+    </div>
+    <div class="qtabs qfundmode" id="qFundMode">
+      <button class="qtab active" data-kind="nav" data-act="qFundMode" data-args='["nav"]'>净值走势</button>
+      <button class="qtab" data-kind="pos" data-act="qFundMode" data-args='["pos"]'>持仓明细</button>
+      <button class="qtab" data-kind="info" data-act="qFundMode" data-args='["info"]'>基金概况</button>
+    </div>
+    <div class="qtabs qtabsfund" id="qTabsFund">
+      <button class="qtab" data-kind="m1" data-act="qTab" data-args='["m1"]'>近1月</button>
+      <button class="qtab active" data-kind="m3" data-act="qTab" data-args='["m3"]'>近3月</button>
+      <button class="qtab" data-kind="m6" data-act="qTab" data-args='["m6"]'>近6月</button>
+      <button class="qtab" data-kind="y1" data-act="qTab" data-args='["y1"]'>近1年</button>
+      <button class="qtab" data-kind="y3" data-act="qTab" data-args='["y3"]'>近3年</button>
+      <button class="qtab" data-kind="all" data-act="qTab" data-args='["all"]'>成立来</button>
+    </div>
+    <div class="qchart" id="qChart"></div>
+    <div class="qstats" id="qStats"></div>
+    <div class="qfundpos" id="qFundPos" style="display:none"></div>
+    <div class="qfundinfo" id="qFundInfo" style="display:none"></div>
+    <div class="qfundmgr" id="qFundMgr" style="display:none"></div>
+    <div class="q5" id="q5" style="display:none"></div>
+    <div class="qops" id="qOps" style="display:none"></div>
+  </div>
+</div>
+
 <div class="mask" id="maskDonate" data-page-node-id="KSyr5rP6AJDDtytkOE7m2v">
   <div class="modal donate-modal" data-page-node-id="uCHA4HGRTgE2iQgDANuXCk">
     <h3 data-page-node-id="vswdbFwjO8R29aUqMt9HTi">☕ 赚钱了请我喝杯咖啡哟~</h3>
@@ -1276,11 +1414,19 @@
       <div class="donate-qr-fallback" data-page-node-id="bmrVoLLluTrGuHWBlJTRyF">☕</div>
     </div>
     <div class="donate-channel" id="donateChannel" data-page-node-id="8z5B9SCjmJiZFnnepIu0u0">微信 · 扫一扫 · 可留言</div>
+    <a class="donate-rate" href="https://microsoftedge.microsoft.com/addons/detail/%E5%9F%BA%E9%87%91%E8%82%A1%E7%A5%A8%E6%8C%81%E4%BB%93%E7%9C%8B%E6%9D%BF/icbhdpdbamfhckjdbglfnainiecajlil?hl=zh-CN" target="_blank" rel="noopener noreferrer" title="在 Edge 加载项商店留下你的评价，帮它被更多人看到" data-page-node-id="rateInDonate01">也欢迎到商店给个好评 ⭐ →</a>
     <div class="ops" style="margin-top:18px;" data-page-node-id="V6qxYe2SufeKsABMpdziJy">
       <button class="btn gold" data-act="closeDonate" data-page-node-id="jlJA10t6gCcxsuqLU0O1Kh">打赏好了</button>
       <button class="btn ghost" data-act="closeDonate" style="margin-left:8px;" data-page-node-id="Z8oxxH6WDCWXQ4neemCnkt">下次一定</button>
     </div>
   </div>
+</div>
+
+<!-- v165 好评浮窗（右下角简版）：引导到 Edge 加载项商店评价；点 × 后 30 天内不再出现 -->
+<div class="rate-float" id="rateFloat" hidden>
+  <button class="rf-x" data-act="closeRateFloat" title="暂时不用了" aria-label="关闭">×</button>
+  <div class="rf-title">喜欢这个看板？</div>
+  <a class="rf-link" data-act="rateFloatGo" href="https://microsoftedge.microsoft.com/addons/detail/%E5%9F%BA%E9%87%91%E8%82%A1%E7%A5%A8%E6%8C%81%E4%BB%93%E7%9C%8B%E6%9D%BF/icbhdpdbamfhckjdbglfnainiecajlil?hl=zh-CN" target="_blank" rel="noopener noreferrer" title="在 Edge 加载项商店留下你的评价，帮它被更多人看到">去商店给个好评 ⭐ →</a>
 </div>
 
 <script src="./dashboard.js"></script>
