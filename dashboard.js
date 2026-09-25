@@ -1570,6 +1570,7 @@ function markSrc(k, ok){
 /* 9:30~11:30、13:00~15:00 = A 股场内盘中（含货币基金、双休、节假日都按 9:30~15:00 判断）；
    9:30 前/11:30~13:00/15:00 后/周末：fundIntraday=false → 不拉今日估值，强制用昨收 */
 function isFundMktOpen(d){
+  if(window.Calendar) return Calendar.isAshareOpen(d);
   var x = d || new Date();
   var day = x.getDay(), m = x.getHours()*60 + x.getMinutes();
   return (day>=1 && day<=5) && ((m>=570 && m<=690) || (m>=780 && m<=900));
@@ -1577,19 +1578,26 @@ function isFundMktOpen(d){
 
 function marketStatus(navTime){
   var now = new Date();
-  var open = isFundMktOpen(now);
-  var nd = now.getDay();
-  var hm = now.getHours()*60 + now.getMinutes();
-  var afterClose = (nd>=1 && nd<=5) && hm > 900;
-  var baseLabel = open ? '交易中 · 实时估值'
-    : afterClose ? '收盘后 · 显示收盘估值（待净值公布）'
-    : (nd===0||nd===6 ? '周末 · 显示昨日净值' : '盘前/午休 · 显示昨日净值');
-  /* 收盘后真有基金 NAV 已公布 → 覆盖"待净值公布"标签，避免"永远待"的误读 */
-  if(navTime && afterClose && baseLabel.indexOf('收盘后') === 0){
-    baseLabel = '净值已公布 · ' + navTime;
+  var C = window.Calendar;
+  if(!C){ $('#mktStatus').textContent = '检测中…'; window.__fundIntraday = false; return; }
+  var S = C.marketStates(now);
+  window.__fundIntraday = S.ash.open;
+  window.__hkIntraday  = S.hk.open;
+  window.__usIntraday  = S.us.open;
+
+  /* 三市场状态标签：交易中 / 盘前 / 已收盘 / 休市·节假日名 */
+  function tok(name, st){
+    if(st.open) return name + '交易中';
+    if(st.phase === 'pre')  return name + '盘前';
+    if(st.phase === 'post') return name + '已收盘';
+    return name + '休市' + (st.holiday ? '·' + st.holiday : '');
   }
-  $('#mktStatus').textContent = baseLabel;
-  window.__fundIntraday = open;
+  var ashTok = tok('A股', S.ash);
+  /* 收盘后真有基金 NAV 已公布 → A股部分覆盖为"净值已公布·时间"，避免"永远待"的误读 */
+  if(navTime && S.ash.phase === 'post' && !S.ash.open){
+    ashTok = 'A股净值已公布·' + navTime;
+  }
+  $('#mktStatus').textContent = [ashTok, tok('港股', S.hk), tok('美股', S.us)].join(' · ');
 }
 
 var _refreshing = false;   /* refreshAll 并发锁：手动+定时器撞车时跳过第二次 */
@@ -1602,6 +1610,8 @@ async function refreshAll(){
   var _rBtnHtml = _rBtn ? _rBtn.innerHTML : null;
   if(_rBtn){ _rBtn.disabled = true; _rBtn.innerHTML = '<svg class="spin" viewBox="0 0 24 24" style="width:16px;height:16px;fill:currentColor"><path d="M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2zm0 18a8 8 0 1 1 8-8 8 8 0 0 1-8 8z" opacity=".25"/><path d="M12 2a10 10 0 0 1 10 10h-2a8 8 0 0 0-8-8z"/></svg>'; }
   try{
+  /* 联网拉取 A股休市表（jsDelivr/holiday-cn，失败自动回退内置规则）；fire-and-forget，不阻塞刷新 */
+  if(window.Calendar) Calendar.ensureAshare(new Date().getFullYear());
   marketStatus();
   $('#chartTime').textContent = new Date().toTimeString().slice(0, 8) + ' 更新';
 
@@ -3342,6 +3352,7 @@ function renderStocks(){
 /* 是否处于连续竞价时段：用于"盘中实时估算 / 实际市值"标签切换
    9:30-11:30、13:00-15:00 为盘中；其余（含盘前盘后、周末）按"已结算"处理 */
 function isMarketOpen(){
+  if(window.Calendar) return Calendar.isAshareOpen(new Date());
   var d = new Date(), day = d.getDay();
   if(day === 0 || day === 6) return false;                 // 周六日
   var t = d.getHours() * 60 + d.getMinutes();
@@ -3351,7 +3362,9 @@ function isMarketOpen(){
    周末 + 工作日 9:30 盘前 → 显示昨日盈亏（此时还没有今日数据，显示今日会空洞=0）
    盘中 / 午休 / 盘后（净值已更新） → 仍显示今日盈亏 */
 function showYesterdayView(d){
-  var x = d || new Date(), day = x.getDay();
+  var x = d || new Date();
+  if(window.Calendar && !Calendar.cnTradingDay(x)) return true; // 非交易日(含节假日/周末)→ 显示昨日净值
+  var day = x.getDay();
   if(day === 0 || day === 6) return true;
   var t = x.getHours() * 60 + x.getMinutes();
   return t < 570; // 9:30 之前（盘前）：显示昨日盈亏
