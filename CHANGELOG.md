@@ -1,5 +1,32 @@
 # 更新日志
 
+## v1.1.7（2026-10-14）
+### 新增
+- **网页浮窗版（真·悬浮）**：新增 content script `float.js`，浏览任意网页时右下角常驻一个可拖拽 / 可收起 / 可关闭的精简悬浮卡，直接读同一份本地持仓（经 `bg.js` 数据桥从 `chrome.storage.local` 读取，由完整看板实时镜像），显示总市值 / 今日盈亏 / 累计盈亏 + 各持仓一行（市值 + 今日涨幅）。数据请求全部走 `bg.js` 中转（`xfetch`）：基金用东财 `fundmobapi` 最新净值、股票 / 汇率用腾讯 `qt.gtimg.cn`（GBK 解码）。点击工具栏图标切换浮窗显隐；悬浮卡内「全屏看板」可打开完整看板。
+- **`bg.js` 数据桥**：新增 `floatInit`（回传扩展本地持仓 / 股票 / 汇率缓存）、`floatStore`（持久化浮窗隐藏状态）、`openDashboard`；`xfetch` 对腾讯 `qt.gtimg.cn` 响应按 GBK 解码（港股 / 美股快照为 GBK，否则乱码）；工具栏图标点击由「直接打开看板」改为「优先切换浮窗，无浮窗时回退打开看板」。
+- **悬停显示名称**：鼠标放到持仓代码行上，tooltip 显示「基金 / 股票全名（代码）」。
+- **隐私模式（眼睛按钮）**：浮窗头部新增眼睛按钮，一键隐藏总市值 / 今日盈亏 / 累计盈亏与各行市值（打码为 `****`），涨跌幅保留；开关状态持久化，跨页面 / 重开页保持。
+- **网页浮窗默认关闭 + 页面切换按钮**：按反馈移除完整看板里的「网页浮窗」复选框。浮窗改为**默认不显示**，由页面右上角的切换按钮手动打开；该按钮在两种状态间切换——浮窗关闭时显示「浮窗」(点击打开浮窗)、浮窗打开时显示「全屏」(点击跳转全屏看板并收起浮窗)，与工具栏图标、浮窗内「全屏看板」一致。打开后状态持久化（float_hidden='0'），关闭后全站不再自动出现。
+- **工具栏图标弹出面板（popup）**：manifest `action.default_popup` 指向新增的 `popup.html` + `popup.js`——点工具栏图标在图标下方弹出 384px 汇总面板：总市值大数字 + 今日/累计盈亏双卡 + 基金/股票分组列表（名称 / 持有收益 / 持有收益率 / 今日涨跌幅药丸）+ 底部「📊 网页浮窗」（向当前标签发 floatToggle，非普通网页时提示不支持）与「全屏看板」按钮。数据源与浮窗完全同源（chrome.storage.local 镜像持仓 + bg xfetch），隐私眼睛与浮窗共用 `float_privacy` 状态。配了 default_popup 后 `chrome.action.onClicked` 不再触发，原「图标点击切浮窗」逻辑移入 popup。面板列表去掉内部滚动条，随持仓数量自然长高。
+- **popup 深色 / 浅色主题切换**：popup 头部新增主题按钮（太阳 / 月亮图标，语义与主看板一致：图标表示当前主题），与主看板、网页浮窗三端联动——`chrome.storage.local` 的 `fund_board_theme` 为共享源（content script 读不到扩展页 localStorage，故浮窗侧只能走 storage；localStorage 保留作兼容兜底），任一端切换经 `storage.onChanged` 实时跟随。整套配色抽成 CSS 变量（`--pp-*`），浅色色板与主看板浅色主题同色系（`#eef1f6` 底 / `#ffffff` 卡 / `#d8dfea` 边 / 红涨 `#e03131` 绿跌 `#0d8a52`）。
+- **网页浮窗透明度设置（取代原主题按钮）**：原浮窗头部的本地主题切换按钮适用性不强，改为「透明度」设置——点击弹出滑杆（30%~100%，步进 5%）实时调节浮窗整体透明度，选择持久化进 `chrome.storage.local` 的 `float_opacity`，跨页面 / 重开页保持。浮窗深浅配色改为**自动跟随全局主题**：看板 / popup 切主题时浮窗经 `storage.onChanged` 实时联动（不再提供本地主题按钮）。Shadow DOM 配色仍为 `--ff-*` 变量（`:host` 深色默认 / `:host.light` 浅色，浅色与另两端同色系）。
+- **网页浮窗自动刷新**：浮窗数据此前仅在打开时拉一次、之后需手动点刷新；现改为**每 60 秒自动刷新**一次（仅页面可见且浮窗打开时发起，后台标签页不浪费请求），从后台切回前台时立即补刷一次，重新打开浮窗时也立即拉最新数据。
+- **修复浮窗 / popup 与看板数据不同步（三处最终一致方案）**：
+  - 根因①——浮窗 / popup 的新浪估算公式与看板不一致：原来把 `gsz` 错设为 `pre_nav`（昨收净值）、`pnl` 用 `mv×gszzl/100`，而看板是 `gsz = pre_nav×(1+pct/100)`（今日估算净值）、`pnl = 份额×(gsz−dwjz)`，导致浮窗基金市值 / 累计盈亏口径与看板对不上。**已对齐**浮窗 / popup 的 `calcFund` 与看板 `calcRow` 完全一致。
+  - 根因②——浮窗 / popup 各走各的独立取数（新浪 + 腾讯快照），刷新时机与看板不同步，且缺少看板的「重仓股自建估算 / F10 官方净值覆盖 / 收盘缓存」两层，个别基金仍会偏差。
+  - **最终解法**：看板每次刷新完把算好的「基金 gsz/dwjz/gszzl/estType + 股票 price/prevClose/pct + 汇率」**结果快照写入 `chrome.storage.local` 的 `fund_board_calc`**；浮窗 / popup 刷新时优先直接读这份快照显示（`storage.onChanged` 实时跟随），看板打开时三处必然完全一致；看板未开 / 快照过期（>5 分钟）才回退独立取数。浮窗状态栏显示「看板同步 HH:MM:SS」。
+
+### 修复
+- **修复「浮窗场外基金全部显示 --」**：浮窗基金取数误用了旧路径 `fundmobapi.eastmoney.com/FundMNFInfo`（已下线，实测返回 404「无法找到资源」）→ 改为与完整看板一致的 **`/FundMNewApi/FundMNFInfo`**（`deviceid=fundboard`），实测四只持仓基金净值 / 涨跌幅正常返回。
+- **修复「浮窗永远取不到持仓」（MV3 致命 bug）**：`bg.js` 的 `floatInit` / `floatStore` 原先误用 `localStorage` 读持仓——但 MV3 后台是 service worker，**根本没有 `localStorage`**，`rd()` 抛 `ReferenceError` 被 catch 返回 `null`，导致浮窗卡片虽出现却始终空数据（用户实测「没看出一点效果」）。已改为读写 `chrome.storage.local`（SW 合规存储）；同时在 `dashboard.html` 注入镜像脚本，把 4 个持仓 key（`fund_board_holdings_v2/v1`、`fund_board_stocks_v1`、`fund_board_fx_v1`）实时同步进 `chrome.storage.local` 供 SW 读取。修复后：**打开一次完整看板**，浮窗即在任意网页显示真实持仓与盈亏。
+- **修复「镜像内联脚本被 MV3 CSP 拦截」**：镜像逻辑原先写在 `dashboard.html` 的内联 `<script>` 里，被 manifest 的 `script-src 'self'` CSP 静默拦截、从未执行，`chrome.storage.local` 始终为空（用户实测「v1.1.7 里有持仓，全屏显示，浮窗不显示」）。已抽成外链 `float-mirror.js`（外链脚本不受该限制），并让浮窗 content script 直接读 `chrome.storage.local`（`bg.floatInit` 仅作兜底）。
+- **修复「浮窗被自己的关闭状态藏起来」**：去掉启动时读取 `float_hidden` 自动隐藏的逻辑——`✕` 关闭只作用于当前页面，刷新 / 新开页浮窗必定重新出现（工具栏图标仍可切换显隐）。
+
+> 发布状态：已打包（本地 v178 / manifest 1.1.7，三处版本一致），**未发布**（GitHub / 官网 / Edge 待执行）。
+
+### 修复（续，第二次实测）
+- **修复「看板有持仓、浮窗仍空」（inline 脚本被 MV3 CSP 拦截）**：上次的镜像逻辑写在 `dashboard.html` 的 inline `<script>` 里，但 `manifest.json` 的 `content_security_policy.extension_pages` 是 `script-src 'self'`，**内联脚本一律被拦截不执行** → `chrome.storage.local` 始终为空 → 浮窗永远读不到持仓（用户实测「v1.1.7 里有持仓，全屏显示，浮窗不显示」）。已将镜像逻辑抽成外链 `float-mirror.js`（`<script src>` 不受 `script-src 'self'` 限制）并在 `dashboard.js` 之前加载；同时 `float.js` 改为 **content script 直接读 `chrome.storage.local`**（本就能访问），去掉对 SW 异步 `floatInit` 的硬依赖，`bg.js` 路径仅作兜底。修复后实测：打开一次完整看板 → 任意网页浮窗即显示真实持仓与盈亏。
+
 ## v1.1.6（2026-09-25）
 ### 修复
 - **修复「法定节假日 / 周末被误判为交易日，导致休市日展示虚假基金估值」（2026-09-25，v177）**：原 `isFundMktOpen()` / `isMarketOpen()` 只判断周几 + 交易时段，不查节假日，于是中秋（周五 2026-09-25）这类法定休市日也被当成交易日去拉估值并展示「涨跌」，给出严重误导。现新增多市场交易日历模块 `calendar.js`，把开市判定从「看星期」升级为「查交易所日历」：① **A 股（沪深北）** 自动联网从 jsDelivr 拉取 `NateScarlet/holiday-cn` 的年度休市表（含调休上班日），本地缓存 7 天、失败回退内置的 2026~2027 国务院放假表；② **港股（HKEX）** 内置 2026~2027 休市表，含春节 / 圣诞 / 新年前夕等半日市（仅上午交易）；③ **美股（NYSE·Nasdaq）** 内置 2026~2027 休市表与提前收盘日（感恩节次日 / 圣诞前一日 13:00 ET 收），并按北京时段处理冬令时（22:30~05:00）/ 夏令时（21:30~04:00）跨午夜。三市场状态在 `marketStatus()` 里合并成「A 股：交易中 / 盘后 / 已收盘 / 休市·节假日名」「港股：…」「美股：…」三段标签展示；非交易日（含节假日 / 周末）强制显示「昨日净值」，不再出现休市日的假估值。

@@ -36,11 +36,16 @@
     --ident-type:rgba(255,255,255,.92);
   }
   *{margin:0;padding:0;box-sizing:border-box;}
-  body{background:var(--bg);color:var(--text);font-family:"Microsoft YaHei","PingFang SC",system-ui,sans-serif;padding:14px 18px;min-width:1100px;}
+  body{background:var(--bg);color:var(--text);font-family:"Microsoft YaHei","PingFang SC",system-ui,sans-serif;padding:0 18px 14px;min-width:1100px;}
   .up{color:var(--red);} .down{color:var(--green);} .muted{color:var(--muted);}
 
   /* ===== 顶栏 ===== */
-  .topbar{display:flex;align-items:center;gap:12px;padding:6px 4px 14px;}
+  /* 全屏模式顶栏吸顶：下滑长页面时工具栏始终可见（背景不透明，盖住滚过内容）
+     transform:translateZ(0) + will-change 把顶栏提升为独立合成层——
+     滚动时浏览器只平移该层、不逐帧重绘阴影，消除吸顶滚动顿挫感。
+     body 顶部内边距已归零、间距收进顶栏自身 padding——顶栏天生就在 scrollTop=0 处，
+     打开页面即为吸顶状态，下拉无需先滚过一段空隙才固定 */
+  .topbar{display:flex;align-items:center;gap:12px;padding:14px 4px 14px;position:sticky;top:0;z-index:20;background:var(--bg);box-shadow:0 8px 14px -12px rgba(0,0,0,.55);transform:translateZ(0);will-change:transform;}
   .topbar .dot{width:10px;height:10px;border-radius:50%;background:var(--blue);box-shadow:0 0 8px var(--blue);}
   .topbar h1{font-size:19px;font-weight:700;letter-spacing:1px;}
   .topbar .status{font-size:12px;color:var(--muted);border:1px solid var(--border);border-radius:4px;padding:2px 8px;}
@@ -566,7 +571,7 @@
   }
   /* ===== 手机 ===== */
   @media (max-width:768px){
-    body{min-width:0;padding:10px;}
+    body{min-width:0;padding:0 10px 10px;}
     .topbar{flex-wrap:wrap;gap:8px;}
     .topbar h1{font-size:16px;width:100%;}
     .topbar .spacer{display:none;}
@@ -975,7 +980,7 @@
 </div>
 
 <div class="footer" data-page-node-id="5mzn8eeIKhJiHZZYyCZBUS">
-  <div data-page-node-id="zUp8qF5bZSbN5uoUBsDvh0">看板版本 v177（2026-09-25）· 数据通道：<span id="srcStatus" data-page-node-id="z1wYSVq2SDR3rGEc2DuS8q">检测中…</span>（若有 ✗ 请刷新重试）· <a href="https://beiyucloud.taoxinyuan.com" target="_blank" rel="noopener noreferrer" style="color:var(--blue);text-decoration:none" data-page-node-id="DdTbDsjtUyJZgVdPL14zdg">持仓实时盈亏看板</a> · <a href="privacy.html" target="_blank" rel="noopener noreferrer" style="color:var(--blue);text-decoration:none" data-page-node-id="FefdJe82QUh4pQusOzTsHG">隐私政策</a></div>
+  <div data-page-node-id="zUp8qF5bZSbN5uoUBsDvh0">看板版本 v178（2026-10-14）· 数据通道：<span id="srcStatus" data-page-node-id="z1wYSVq2SDR3rGEc2DuS8q">检测中…</span>（若有 ✗ 请刷新重试）· <a href="https://beiyucloud.taoxinyuan.com" target="_blank" rel="noopener noreferrer" style="color:var(--blue);text-decoration:none" data-page-node-id="DdTbDsjtUyJZgVdPL14zdg">持仓实时盈亏看板</a> · <a href="privacy.html" target="_blank" rel="noopener noreferrer" style="color:var(--blue);text-decoration:none" data-page-node-id="FefdJe82QUh4pQusOzTsHG">隐私政策</a></div>
   数据来源：新浪财经（盘中实时估算；大盘资金流向图的备用源）· 天天基金移动端接口（净值/重仓股）· 腾讯行情（指数 / 国际金价）· 同花顺（涨跌家数的备用源，沪深两市口径）· 东方财富（个股实时行情 / 涨跌家数 / 行业板块 / 国际金价 / 离岸人民币汇率）。涨跌家数与大盘资金流向图都按「东财优先、备用源兜底」取数，备用源生效时卡片上会标注实际来源与口径。<br data-page-node-id="PZMJhv4er1FN8SaVQfTn8n">
   计算口径：美股 / 港股按实时汇率折算为人民币后计入总市值与盈亏（可在「提醒设置 → 汇率折算」手填覆盖）；录入口径：成本价与加仓 / 减仓成交价一律按原币填写（港股港元 HK$、美股美元 $），不要换算成人民币填；填份额时 今日盈亏 = 份额 ×（估算净值 − 昨日净值）（盘中/盘后显示实时估算）；持有收益率 = 已结算市值 ÷（份额 × 成本价）− 1，净值未公布时沿用上一交易日确认净值、不随盘中估值跳动，净值公布后自动更新；未填份额时按「持有市值 × 估算涨幅」近似。<br data-page-node-id="nmwS0MHOUCZIY8BU70uad3">
   「实时估算」为新浪基于基金前十大重仓股/债券/ETF 的加权估算（分钟级）；「重仓估算」为本页按前十大重仓股实时行情的自建兜底估算。估算均基于上季持仓，与实际净值有偏差，仅供参考。<br data-page-node-id="CDL3UwBopiRFtyToi6tonR">
@@ -1430,6 +1435,10 @@
 </div>
 
 <script src="./calendar.js"></script>
+<!-- 浮窗版镜像：把完整看板的持仓/股票/汇率同步进 chrome.storage.local，供浮窗读取。
+     MV3 后台没有 localStorage，浮窗数据只能走 chrome.storage.local；本段在 dashboard.js 之前加载。
+     注意：原 inline <script> 会被 extension_pages 的 CSP（script-src 'self'）拦截，故抽成 float-mirror.js 外链。 -->
+<script src="./float-mirror.js"></script>
 <script src="./dashboard.js"></script>
 </body>
 </html>

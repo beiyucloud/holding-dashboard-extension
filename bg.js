@@ -1,7 +1,7 @@
-// 扩展后台：点击工具栏图标 → 在新标签页打开看板
-chrome.action.onClicked.addListener(function () {
-  chrome.tabs.create({ url: chrome.runtime.getURL('dashboard.html') });
-});
+// 扩展后台。
+// ⚠️ 工具栏图标点击已交给 action.default_popup（popup.html）——manifest 配了 default_popup 后
+// chrome.action.onClicked 不会再触发，「切换浮窗 / 打开看板」的逻辑已移入 popup.js
+// （popup 内「📊 网页浮窗」按钮向当前标签发 floatToggle，「全屏看板」开 dashboard.html）。
 
 /* ============== 角标：显示今日盈亏 ==============
    扩展页 (dashboard.js) 每次刷新完数据，把今日盈亏金额推过来；
@@ -43,6 +43,44 @@ function setBadge(pnl){
 chrome.runtime.onMessage.addListener(function(msg){
   if(msg && msg.type === 'updateBadge' && typeof msg.pnl === 'number'){
     setBadge(msg.pnl);
+  }
+});
+
+/* ============== 浮窗版数据桥 ==============
+   浮层是 content script，跑在网页源里，读不到扩展的存储；
+   这里代它读扩展的 chrome.storage.local 并回传。
+   注意：MV3 后台是 service worker，没有 localStorage / document，
+   持仓只能存放在 chrome.storage.local（由 dashboard.html 镜像写入）。
+   同时支持把「隐藏浮窗」状态持久化，以及由工具栏图标点击转发的「打开完整看板」动作。 */
+var FLOAT_KEYS = ['fund_board_holdings_v2', 'fund_board_holdings_v1', 'fund_board_stocks_v1', 'fund_board_fx_v1', 'float_hidden'];
+chrome.runtime.onMessage.addListener(function(msg, sender, sendResponse){
+  if(!msg) return;
+  if(msg.type === 'floatInit'){
+    chrome.storage.local.get(FLOAT_KEYS, function(o){
+      function rd(k){ try{ var s = o[k]; return (s === null || s === undefined) ? null : JSON.parse(s); }catch(e){ return null; } }
+      sendResponse({
+        ok: true,
+        holdings: rd('fund_board_holdings_v2') || rd('fund_board_holdings_v1'),
+        stocks: rd('fund_board_stocks_v1'),
+        fx: rd('fund_board_fx_v1'),
+        hidden: o.float_hidden === '1'
+      });
+    });
+    return true; // 异步 sendResponse，必须返回 true
+  }
+  if(msg.type === 'floatStore' && typeof msg.key === 'string'){
+    if(msg.val === null || msg.val === undefined){
+      chrome.storage.local.remove(msg.key, function(){ sendResponse({ ok: true }); });
+    } else {
+      var pair = {}; pair[msg.key] = String(msg.val);
+      chrome.storage.local.set(pair, function(){ sendResponse({ ok: true }); });
+    }
+    return true; // 异步 sendResponse
+  }
+  if(msg.type === 'openDashboard'){
+    chrome.tabs.create({ url: chrome.runtime.getURL('dashboard.html') });
+    sendResponse({ ok: true });
+    return true;
   }
 });
 
@@ -101,7 +139,19 @@ chrome.runtime.onMessage.addListener(function(msg, sender, sendResponse){
         'Accept-Language': 'zh-CN,zh;q=0.9'
       }
     });
-    const txt = await r.text();
+    // 腾讯快照 qt.gtimg.cn 返回 GBK，需显式按 GBK 解码（arrayBuffer + TextDecoder('gbk')）。
+    // ⚠️ 只对腾讯域名走这条：其余主机一律保持 v177 的原实现 `await r.text()`，
+    //    实测把全部主机改成 arrayBuffer+TextDecoder 后 F10 概况等 HTML 接口取不到正文。
+    let host = '';
+    try { host = new URL(url).hostname; } catch (_) {}
+    const isGbk = /(?:^|\.)qt\.gtimg\.cn$/.test(host);
+    let txt;
+    if (isGbk) {
+      const buf = await r.arrayBuffer();
+      txt = new TextDecoder('gbk').decode(buf);
+    } else {
+      txt = await r.text();
+    }
     return { status: r.status, body: txt, ua: ua };
   }
 

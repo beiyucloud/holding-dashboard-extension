@@ -69,9 +69,36 @@ function toggleTheme(){
   var cur = document.documentElement.getAttribute('data-theme') === 'light' ? 'light' : 'dark';
   var next = cur === 'light' ? 'dark' : 'light';
   try{ localStorage.setItem(THEME_KEY, next); }catch(e){}
+  /* 三端联动：同步进 chrome.storage.local（网页浮窗 / popup 的共享源，content script 读不到 localStorage） */
+  try{ if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) chrome.storage.local.set({fund_board_theme: next}); }catch(e){}
   document.documentElement.setAttribute('data-theme', next);
   setThemeButton(next);
   refreshAll(); /* 重绘界面与 ECharts（主题色随之切换） */
+}
+/* 主题三端联动：chrome.storage.local 为网页浮窗 / popup / 看板共享源（content script 读不到 localStorage）。
+   提前异步读取：若浮窗改过主题，优先采用并回写 localStorage；浮窗日后再改，经 onChanged 实时跟随。 */
+if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
+  try {
+    chrome.storage.local.get([THEME_KEY], function (o) {
+      var s = o && o[THEME_KEY];
+      if (s === 'light' || s === 'dark') {
+        try { if (localStorage.getItem(THEME_KEY) !== s) localStorage.setItem(THEME_KEY, s); } catch (e) {}
+        if (document.documentElement.getAttribute('data-theme') !== s) {
+          document.documentElement.setAttribute('data-theme', s);
+          setThemeButton(s);
+          if (typeof refreshAll === 'function') { try { refreshAll(); } catch (e) {} }
+        }
+      }
+    });
+    chrome.storage.onChanged.addListener(function (changes, area) {
+      if (area !== 'local' || !changes || !changes[THEME_KEY]) return;
+      var t = changes[THEME_KEY].newValue === 'light' ? 'light' : 'dark';
+      try { localStorage.setItem(THEME_KEY, t); } catch (e) {}
+      document.documentElement.setAttribute('data-theme', t);
+      setThemeButton(t);
+      if (typeof refreshAll === 'function') { try { refreshAll(); } catch (e) {} }
+    });
+  } catch (e) {}
 }
 /* 读取当前主题对应的图表颜色（ECharts 不支持 CSS 变量，需运行时取） */
 function themeColors(){
@@ -271,7 +298,12 @@ function loadHoldings(){
   try{ var oldRaw = localStorage.getItem('fund_board_holdings_v1'); if(oldRaw !== null){ var old = JSON.parse(oldRaw); if(Array.isArray(old)) return old.map(normHolding); } }catch(e){}
   return null;
 }
-function saveHoldings(){ try{ localStorage.setItem(LS_KEY, JSON.stringify(holdings)); }catch(e){ console.error('[ext] saveHoldings 失败:', e && e.message || e); toast('持仓保存失败：存储已满或隐私模式'); } }
+/* 同时把持仓类数据镜像进 chrome.storage.local，使工具栏 popup / 网页浮窗
+   即使当天没打开过完整看板也能直接读到持仓（不依赖 float-mirror 的加载快照）。 */
+function mirrorToStorage(key, val){
+  try{ if(chrome && chrome.storage && chrome.storage.local){ var o={}; o[key]=val; chrome.storage.local.set(o); } }catch(e){}
+}
+function saveHoldings(){ try{ localStorage.setItem(LS_KEY, JSON.stringify(holdings)); }catch(e){ console.error('[ext] saveHoldings 失败:', e && e.message || e); toast('持仓保存失败：存储已满或隐私模式'); } mirrorToStorage(LS_KEY, JSON.stringify(holdings)); }
 var holdings = loadHoldings();
 if(!holdings){
   /* 初始安装为空仓状态，不再预置示例持仓；用户可点击顶栏「+」添加 */
@@ -696,7 +728,7 @@ function onVisIdxChange(e){
      故：只对 push2 系（接口即路径）用「主机+路径」，其余主机仍用「主机」。 */
 var DEAD_HOST_MS = 90000;
 var deadHosts = {};   /* {key: 到期时间戳} */
-var DEAD_KEY_PATH_HOSTS = /^(?:\d+\.)?push2(?:his|delay|ex)?\.eastmoney\.com$/;
+var DEAD_KEY_PATH_HOSTS = /^(?:\d+\.)?push2(?:his|delay|ex)?\.eastmoney\.com$|^fundf10\.eastmoney\.com$/;
 function hostOf(url){
   try{ return new URL(url).hostname; }catch(e){ return String(url).slice(0, 40); }
 }
@@ -1601,6 +1633,25 @@ function marketStatus(navTime){
 }
 
 var _refreshing = false;   /* refreshAll 并发锁：手动+定时器撞车时跳过第二次 */
+/* 把本次刷新算好的「基金/股票/汇率」最终结果快照写入 chrome.storage.local，
+   供网页浮窗 / toolbar popup 直接读取显示，确保三处数字完全一致（看板为唯一计算源）。 */
+function publishCalcSnapshot(){
+  try{
+    if(!(chrome && chrome.storage && chrome.storage.local)) return;
+    var f = {}, s = {}, fx = {};
+    Object.keys(fundInfo).forEach(function(c){
+      var i = fundInfo[c]; if(!i) return;
+      f[c] = { name:i.name, gszzl:i.gszzl, gsz:i.gsz, dwjz:i.dwjz, gztime:i.gztime, estType:i.estType, navDate:i.navDate, navPct:i.navPct };
+    });
+    Object.keys(stockInfo).forEach(function(c){
+      var i = stockInfo[c]; if(!i) return;
+      s[c] = { name:i.name, price:i.price, prevClose:i.prevClose, pct:i.pct };
+    });
+    ['USD','HKD'].forEach(function(cc){ if(fxRates[cc] && fxRates[cc].rate){ fx[cc] = fxRates[cc].rate; } });
+    chrome.storage.local.set({ fund_board_calc: { ts: Date.now(), fundInfo: f, stockInfo: s, fx: fx } });
+  }catch(e){}
+}
+
 async function refreshAll(){
   /* 并发锁：用户连点刷新或自动定时器撞手动刷新时直接跳过，避免接口被双倍调用（东财 push2 风控敏感） */
   if(_refreshing){ return; }
@@ -2088,6 +2139,8 @@ async function refreshAll(){
     renderChart([], [], [], null, null);
   }
   } finally {
+    /* 把算好的结果快照广播给浮窗 / popup，保证三处一致（无论本次是否抛错都执行） */
+    publishCalcSnapshot();
     /* 恢复按钮 + 清并发锁。无论 refreshAll 内部是否抛错都执行 */
     _refreshing = false;
     if(_rBtn){ _rBtn.disabled = false; _rBtn.innerHTML = _rBtnHtml || '<svg viewBox="0 0 24 24" style="width:16px;height:16px;fill:currentColor"><path d="M17.65 6.35C16.2 4.9 14.21 4 12 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08c-.82 2.33-3.04 4-5.65 4-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"/></svg>'; }
@@ -2979,7 +3032,7 @@ var stocks = (function(){
   try{ var s = JSON.parse(localStorage.getItem(STK_KEY)); if(Array.isArray(s)) return s.map(normRealized); }catch(e){}
   return [];
 })();
-function saveStocks(){ try{ localStorage.setItem(STK_KEY, JSON.stringify(stocks)); }catch(e){ console.error('[ext] saveStocks 失败:', e && e.message || e); toast('股票保存失败：存储已满或隐私模式'); } }
+function saveStocks(){ try{ localStorage.setItem(STK_KEY, JSON.stringify(stocks)); }catch(e){ console.error('[ext] saveStocks 失败:', e && e.message || e); toast('股票保存失败：存储已满或隐私模式'); } mirrorToStorage(STK_KEY, JSON.stringify(stocks)); }
 /* v1.0.9 启动迁移：北交所旧代码 bj8xxxxx / bj43xxxx -> bj920xxx（后三位保留）。
    北交所 2025-10-09 起全部切换为 920 号段，旧 8xx/43xx 已停更，必须迁移到 920 才能取到实时行情。 */
 (function(){
@@ -3011,7 +3064,7 @@ var fxRates = (function(){
   try{ var o = JSON.parse(localStorage.getItem(FX_KEY)); if(o && typeof o === 'object') return o; }catch(e){}
   return {};
 })();
-function saveFxRates(){ try{ localStorage.setItem(FX_KEY, JSON.stringify(fxRates)); }catch(e){} }
+function saveFxRates(){ try{ localStorage.setItem(FX_KEY, JSON.stringify(fxRates)); }catch(e){} mirrorToStorage(FX_KEY, JSON.stringify(fxRates)); }
 /* 币种判定：us* → USD；hk* → HKD；其余（A股 / 北交所 / 场内基金等）→ CNY */
 function curOfStock(code){
   var nc = (code || '').toLowerCase();
@@ -5355,7 +5408,10 @@ function swText(url){
   });
 }
 function textVia(url){
-  if(hostIsDead(url)) return Promise.resolve('');
+  /* 直连被短路时仍要走 SW 中转（bg 有 Referer/UA/重试），而不是返回空——
+     否则同主机任一接口一次网络抖动，90s 内全部功能连坐失效（实测：jjcc 失败会拉黑
+     fundf10 整个主机，概况 tab 变「未取到该基金的概况数据」）。 */
+  if(hostIsDead(url)) return swText(url);
   return fetch(url, {credentials: 'omit'})
     .then(function(r){ if(!r.ok) throw new Error('http ' + r.status); return r.text(); })
     .catch(function(e){ markHostDead(url, e && e.message); return swText(url); })
@@ -5952,6 +6008,69 @@ function qRenderFundInfo(p){
     + '本站只做公开信息整理，不构成投资建议。</div>';
   host.innerHTML = html;
 }
+/* 概况页面取数：直连（扩展页有 host 权限）与 bg 中转（SW，带 Referer/UA/重试）**并行**，
+   谁先拿到含 table.info 的有效 HTML 就用谁；全失败再隔 800ms 重试一轮。
+   诊断信息随结果返回，失败时显示出来，便于定位是网络被拦还是页面结构变了。 */
+function qFetchProfileHtml(code){
+  var url = 'https://fundf10.eastmoney.com/jbgk_' + code + '.html';
+  var diag = [];
+  function tryDirect(){
+    return fetch(url, { credentials: 'omit' })
+      .then(function(r){
+        diag.push('直连 ' + r.status);
+        if(!r.ok) throw new Error('http ' + r.status);
+        return r.text();
+      })
+      .then(function(t){ diag.push('直连 ' + (t ? t.length : 0) + 'B'); return t || ''; })
+      .catch(function(e){ diag.push('直连失败:' + String(e && e.message || e).slice(0, 30)); return ''; });
+  }
+  function trySw(){
+    return new Promise(function(res){
+      try{
+        if(!(window.chrome && chrome.runtime && chrome.runtime.sendMessage)){ diag.push('SW不可用'); res(''); return; }
+        chrome.runtime.sendMessage({ type: 'xfetch', url: url }, function(r){
+          var err = window.chrome && chrome.runtime ? chrome.runtime.lastError : null;
+          if(err){ diag.push('SW异常:' + String(err.message || '').slice(0, 30)); res(''); return; }
+          if(!r || !r.ok){ diag.push('SW失败:' + String((r && r.error) || 'no-body').slice(0, 30)); res(''); return; }
+          diag.push('SW ' + (r.status || 200) + '/' + (r.body ? r.body.length : 0) + 'B');
+          res(r.body || '');
+        });
+      }catch(e){ diag.push('SW异常'); res(''); }
+    });
+  }
+  function once(){
+    return new Promise(function(resolve){
+      var done = false, pending = 2, last = '';
+      function take(t){
+        if(!done && t && t.indexOf('class="info') >= 0){ done = true; resolve({ txt: t, diag: diag }); return true; }
+        if(t) last = t;
+        return false;
+      }
+      function settle(t){ if(--pending === 0 && !done) resolve({ txt: last, diag: diag }); }
+      tryDirect().then(function(t){ take(t); settle(t); });
+      trySw().then(function(t){ take(t); settle(t); });
+    });
+  }
+  return once().then(function(r){
+    if(r.txt) return r;
+    return new Promise(function(res){ setTimeout(res, 800); }).then(once);
+  });
+}
+function qDieInfo(host, diag){
+  var msg = '未取到该基金的概况数据';
+  var tip = diag && diag.length ? '（诊断：' + diag.join('｜') + '）' : '';
+  /* 双通道都网络级失败且服务端本身可达（地址栏能打开）时，最常见原因是
+     扩展「网站访问权限」未覆盖该主机：无 ACAO 的主机必须靠 host 权限绕过 CORS，
+     权限没给全时只有带 ACAO:* 的接口（fundmobapi/腾讯）能通，东财 HTML 系全挂。 */
+  var bothNetFail = diag && diag.length >= 2 && diag.every(function(s){ return /失败|异常|no-body/.test(s); });
+  var hint = bothNetFail
+    ? '<br><span style="font-size:11px;opacity:.85">双通道均失败：请检查 edge://extensions → 本扩展「详细信息」→ 网站访问权限 是否为「在所有网站上」</span>'
+    : '';
+  var hint2 = (diag && diag.some(function(s){ return /解析为空/.test(s); }))
+    ? '<br><span style="font-size:11px;opacity:.75">页面已取到但结构解析为空，可能是页面改版</span>'
+    : '';
+  if(host) host.innerHTML = '<div class="qf-empty">' + msg + '<br><span style="font-size:11px;opacity:.75">' + escHtml(tip || '可稍后重试') + '</span>' + hint + hint2 + '</div>';
+}
 function qLoadFundInfo(){
   var host = $('#qFundInfo'), code = qState.code;
   if(!host || !code) return;
@@ -5959,18 +6078,21 @@ function qLoadFundInfo(){
   var token = ++qFundSeq;
   var task;
   if(qFundInfoCache[code]){
-    task = Promise.resolve(qFundInfoCache[code]);
+    task = Promise.resolve({ p: qFundInfoCache[code], diag: ['缓存'] });
   } else {
-    task = textVia('https://fundf10.eastmoney.com/jbgk_' + code + '.html').then(function(t){
-      return t ? parseFundProfile(t) : null;
-    }).then(function(p){ if(p) qFundInfoCache[code] = p; return p; });
+    task = qFetchProfileHtml(code).then(function(r){
+      var p = r.txt ? parseFundProfile(r.txt) : null;
+      if(p) qFundInfoCache[code] = p;
+      if(r.txt && !p) r.diag.push('解析为空（页面结构可能变化）');
+      return { p: p, diag: r.diag };
+    });
   }
-  task.then(function(p){
+  task.then(function(res){
     if(token !== qFundSeq || qState.code !== code || qState.mode !== 'fund' || qFundView !== 'info') return;
-    if(!p){ host.innerHTML = '<div class="qf-empty">未取到该基金的概况数据（可稍后重试）</div>'; return; }
-    qRenderFundInfo(p);
-  }).catch(function(){
-    if(token === qFundSeq) host.innerHTML = '<div class="qf-empty">未取到该基金的概况数据（可稍后重试）</div>';
+    if(!res.p){ qDieInfo(host, res.diag); return; }
+    qRenderFundInfo(res.p);
+  }).catch(function(e){
+    if(token === qFundSeq) qDieInfo(host, ['异常:' + String(e && e.message || e).slice(0, 40)]);
   });
 }
 

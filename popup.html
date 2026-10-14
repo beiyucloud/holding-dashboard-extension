@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>持仓看板</title>
+<style>
+  /* 弹出面板（browser action popup）：点工具栏图标在图标下方渲染，宽 384px 左右、高度自适应 */
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    /* 深色（默认）——与主看板深色主题同色系 */
+    --pp-bg: #171c28; --pp-head-a: #2b3550; --pp-head-b: #232b3e;
+    --pp-panel: #1e2534; --pp-border: #2a3244; --pp-text: #e6e9ef;
+    --pp-sub: #8fa0bf; --pp-title: #d7e3ff; --pp-nm: #dde4f2; --pp-num: #b7c1d4;
+    --pp-grp: #6d7a92; --pp-foot: #1b2130; --pp-total: #f4f7ff; --pp-flat: #8fa0bf;
+    --pp-btn: rgba(255,255,255,.07); --pp-btn-hover: rgba(255,255,255,.16); --pp-btn-text: #c3cde0;
+    --pp-up: #ff5d5d; --pp-down: #2ecc8f;
+    --pp-up-bg: rgba(240,69,69,.13); --pp-down-bg: rgba(35,181,115,.13);
+  }
+  :root[data-theme="light"] {
+    /* 浅色——与主看板浅色主题同色系（--bg/--panel/--border/--text/--red/--green） */
+    --pp-bg: #eef1f6; --pp-head-a: #ffffff; --pp-head-b: #f6f8fc;
+    --pp-panel: #ffffff; --pp-border: #d8dfea; --pp-text: #1f2937;
+    --pp-sub: #647085; --pp-title: #1f2937; --pp-nm: #1f2937; --pp-num: #5a6478;
+    --pp-grp: #9aa7ba; --pp-foot: #f6f8fc; --pp-total: #111827; --pp-flat: #647085;
+    --pp-btn: #dde4ee; --pp-btn-hover: #cbd5e3; --pp-btn-text: #3c4a63;
+    --pp-up: #e03131; --pp-down: #0d8a52;
+    --pp-up-bg: rgba(224,49,49,.10); --pp-down-bg: rgba(13,138,82,.12);
+  }
+  body {
+    width: 384px;
+    background: var(--pp-bg);
+    color: var(--pp-text);
+    font: 13px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", "Microsoft YaHei", sans-serif;
+  }
+  .pp-head { display: flex; align-items: center; gap: 8px; padding: 10px 12px; background: linear-gradient(180deg, var(--pp-head-a), var(--pp-head-b)); border-bottom: 1px solid var(--pp-border); }
+  .pp-title { font-size: 14px; font-weight: 700; color: var(--pp-title); letter-spacing: .5px; }
+  .pp-status { flex: 1; font-size: 11px; color: var(--pp-sub); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .pp-head button { background: var(--pp-btn); border: none; color: var(--pp-btn-text); width: 26px; height: 26px; border-radius: 7px; cursor: pointer; font-size: 14px; line-height: 1; display: inline-flex; align-items: center; justify-content: center; }
+  .pp-head button:hover { background: var(--pp-btn-hover); }
+  .pp-head button svg { width: 15px; height: 15px; fill: currentColor; }
+  .pp-sum { padding: 12px 12px 8px; }
+  .pp-tl { font-size: 11px; color: var(--pp-sub); letter-spacing: 1px; }
+  .pp-tv { font-size: 24px; font-weight: 800; color: var(--pp-total); margin: 2px 0 9px; font-variant-numeric: tabular-nums; }
+  .pp-duo { display: flex; gap: 8px; }
+  .pp-cell { flex: 1; background: var(--pp-panel); border: 1px solid var(--pp-border); border-radius: 9px; padding: 6px 9px; min-width: 0; }
+  .pp-cell span { display: block; font-size: 10px; color: var(--pp-sub); margin-bottom: 2px; }
+  .pp-cell b { font-size: 13px; font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: block; }
+  .up { color: var(--pp-up); } .down { color: var(--pp-down); }
+  .pp-list { padding: 4px 12px 8px; }
+  .pp-grp { font-size: 10px; color: var(--pp-grp); letter-spacing: 2px; margin: 6px 0 2px; }
+  .pp-row { display: grid; grid-template-columns: 1fr auto auto auto; gap: 8px; align-items: center; padding: 6px 4px; border-radius: 7px; }
+  .pp-row:hover { background: rgba(127,127,127,.10); }
+  .pp-nm { font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--pp-nm); }
+  .pp-num { font-size: 12px; color: var(--pp-num); font-variant-numeric: tabular-nums; white-space: nowrap; min-width: 56px; text-align: right; }
+  .pp-pct { font-size: 11px; font-weight: 700; padding: 1px 7px; border-radius: 9px; white-space: nowrap; min-width: 58px; text-align: center; }
+  .pp-pct.up { color: var(--pp-up); background: var(--pp-up-bg); }
+  .pp-pct.down { color: var(--pp-down); background: var(--pp-down-bg); }
+  .pp-pct.flat { color: var(--pp-flat); background: rgba(127,127,127,.10); }
+  .pp-empty { font-size: 12px; color: var(--pp-sub); padding: 16px 0; text-align: center; }
+  .pp-foot { display: flex; gap: 8px; padding: 9px 12px; border-top: 1px solid var(--pp-border); background: var(--pp-foot); }
+  .pp-btn { flex: 1; background: #2563eb; color: #fff; border: none; border-radius: 9px; padding: 8px 0; font-size: 13px; font-weight: 600; cursor: pointer; }
+  .pp-btn:hover { background: #1d4fd7; }
+  .pp-btn.ghost { background: var(--pp-btn); color: var(--pp-btn-text); }
+  .pp-btn.ghost:hover { background: var(--pp-btn-hover); }
+  .pp-toast { position: fixed; left: 50%; bottom: 56px; transform: translateX(-50%); background: rgba(0,0,0,.78); color: #fff; font-size: 12px; padding: 6px 12px; border-radius: 8px; white-space: nowrap; }
+</style>
+</head>
+<body>
+  <div class="pp-head">
+    <span class="pp-title">持仓看板</span>
+    <span class="pp-status" id="ppStatus">载入中…</span>
+    <button id="ppTheme" title="切换深色 / 浅色" aria-label="切换主题"></button>
+    <button id="ppEye" title="隐藏 / 显示金额"></button>
+    <button id="ppRefresh" title="刷新">⟳</button>
+  </div>
+  <div class="pp-sum">
+    <div class="pp-tl">总市值（元）</div>
+    <div class="pp-tv" id="ppTotal">--</div>
+    <div class="pp-duo">
+      <div class="pp-cell"><span>今日盈亏</span><b id="ppPnl">--</b></div>
+      <div class="pp-cell"><span>累计盈亏</span><b id="ppCum">--</b></div>
+    </div>
+  </div>
+  <div class="pp-list" id="ppList"></div>
+  <div class="pp-foot">
+    <button id="ppFloat" class="pp-btn">📊 网页浮窗</button>
+    <button id="ppOpen" class="pp-btn ghost">全屏看板</button>
+  </div>
+<script src="./popup.js"></script>
+</body>
+</html>
