@@ -1633,9 +1633,13 @@ function marketStatus(navTime){
 }
 
 var _refreshing = false;   /* refreshAll 并发锁：手动+定时器撞车时跳过第二次 */
-/* 把本次刷新算好的「基金/股票/汇率」最终结果快照写入 chrome.storage.local，
-   供网页浮窗 / toolbar popup 直接读取显示，确保三处数字完全一致（看板为唯一计算源）。 */
-function publishCalcSnapshot(){
+/* 全局缓存 SW 算好的 fund_board_calc 快照：监听 onChanged 触发顶部重绘（保持响应性）。 */
+var gSnap = null, gSnapActive = false, gFundRes = null, gStockRes = null;
+/* 把本次刷新算好的「基金/股票/汇率」结果快照写入 chrome.storage.local，供浮窗 / popup 直接读取。
+   SW（bg.js computeSnapshot）与看板互为写者——两者取数源与公式已完全统一
+   （东财 FundMNFInfo + 新浪 getEstimateNetworthPic 序列末点 + 腾讯 qt.gtimg），
+   谁后写谁生效，popup/浮窗读到的都是最新一份；看板打开期间以看板刷新为准（最即时）。 */
+function publishCalcSnapshot(sum, sRes){
   try{
     if(!(chrome && chrome.storage && chrome.storage.local)) return;
     var f = {}, s = {}, fx = {};
@@ -1648,14 +1652,40 @@ function publishCalcSnapshot(){
       s[c] = { name:i.name, price:i.price, prevClose:i.prevClose, pct:i.pct };
     });
     ['USD','HKD'].forEach(function(cc){ if(fxRates[cc] && fxRates[cc].rate){ fx[cc] = fxRates[cc].rate; } });
-    chrome.storage.local.set({ fund_board_calc: { ts: Date.now(), fundInfo: f, stockInfo: s, fx: fx } });
+    var snap = { ts: Date.now(), writer: 'dash', fundInfo: f, stockInfo: s, fx: fx };
+    var fr = sum || gFundRes, sr = sRes || gStockRes;
+    if(fr || sr){
+      var fm = fr ? (fr.totalMv || 0) : 0, sm = sr ? (sr.totalMv || 0) : 0;
+      var fp = fr ? (fr.totalPnl || 0) : 0, sp = sr ? (sr.totalPnl || 0) : 0;
+      var fc2 = fr ? (fr.cumAll || 0) : 0, sc2 = sr ? (sr.cum || 0) : 0;
+      snap.totMv = Math.round(fm + sm); snap.totPnl = Math.round(fp + sp); snap.totCum = Math.round(fc2 + sc2);
+      snap.totMvFund = Math.round(fm); snap.totPnlFund = Math.round(fp); snap.totCumFund = Math.round(fc2);
+      snap.totMvStock = Math.round(sm); snap.totPnlStock = Math.round(sp); snap.totCumStock = Math.round(sc2);
+    }
+    chrome.storage.local.set({ fund_board_calc: snap });
   }catch(e){}
 }
+
+/* 监听 SW 重算的快照：SW 每 60s（chrome.alarms）或按需重算后写入 fund_board_calc，
+   看板顶部随之刷新，保证与 popup / 浮窗 / 角标完全同步。 */
+try{
+  chrome.storage.onChanged.addListener(function(changes, area){
+    if(area === 'local' && changes.fund_board_calc){
+      gSnap = changes.fund_board_calc.newValue || null;
+      gSnapActive = !!(gSnap && (Date.now() - gSnap.ts) < 5 * 60 * 1000);
+      if(gFundRes && gStockRes && typeof updateSummary === 'function'){
+        try{ updateSummary(gFundRes, gStockRes); }catch(e){}
+      }
+    }
+  });
+}catch(e){}
 
 async function refreshAll(){
   /* 并发锁：用户连点刷新或自动定时器撞手动刷新时直接跳过，避免接口被双倍调用（东财 push2 风控敏感） */
   if(_refreshing){ return; }
   _refreshing = true;
+  /* 刷新前先取 SW 算好的快照（单一数据源），顶部汇总将优先用它，与 popup/浮窗/角标一致 */
+  try{ var _gs = await new Promise(function(r){ chrome.storage.local.get('fund_board_calc', function(o){ r((o && o.fund_board_calc) ? o.fund_board_calc : null); }); }); gSnap = _gs; }catch(e){ gSnap = null; }
   /* loading 反馈：禁用按钮 + 图标按钮改为 spinner，让用户知道点了生效 */
   var _rBtn = document.querySelector('[data-act="refreshAll"]');
   var _rBtnHtml = _rBtn ? _rBtn.innerHTML : null;
@@ -1753,12 +1783,14 @@ async function refreshAll(){
           var pct = parseFloat(lp.nav_pct);            // 今日涨跌幅，百分比数值（如 -1.27）
           var prevNav = parseFloat(lp.pre_nav);        // 昨收净值
           if(!isNaN(pct) && !isNaN(prevNav) && lp.min_time){
+            /* 🔴 字段语义实锤（2026-10-15 四基金对质）：新浪 pre_nav ≠ 昨收净值，
+               而是「今日估算净值」= 官方昨收 × (1+nav_pct/100)。
+               例：鼎益 10-14 官方净值 1.3460，新浪 pre_nav=1.3100=1.346×(1−2.6719%)。
+               故 gsz 直接取 pre_nav；官方昨收 = pre_nav/(1+pct/100)（东财 NAV 优先）。
+               旧算法 gsz=pre_nav×(1+pct/100) 把跌幅乘了两遍 → 今日盈亏约翻倍。 */
             info1.gszzl = pct;                          // 已是百分比，直接显示
-            info1.gsz = prevNav * (1 + pct / 100);      // ✅ 加权估算净值 = 昨收 × (1+今日涨跌幅)
-            info1.dwjz = prevNav;                       // ✅ 兜底：把 pre_nav 当昨收净值赋给 dwjz，
-                                                          // 盘后空窗（东财 fundmobapi 没拿到今日 NAV 时 dwjz=null）
-                                                          // calcRow 的 `info.gsz && info.dwjz` 分支照样能算出
-                                                          // pnl = shares × (gsz - dwjz) = shares × pre_nav × (pct/100)
+            info1.gsz = prevNav;                        // ✅ 今日估算净值（=新浪 pre_nav 本义）
+            if(info1.dwjz == null){ info1.dwjz = prevNav / (1 + pct / 100); }   // 官方昨收反推兜底（东财 NAV 已有则保留）
             info1.navDate = lp.pre_date;                // ✅ 同步 navDate（卡片「最新净值」用）
             var _pd = (typeof lp.pre_date === 'string' && lp.pre_date.length === 10) ? lp.pre_date.slice(5) : todayStr.slice(5);
             info1.gztime = _pd + ' ' + String(lp.min_time).slice(0, 5);   // 如 "08-14 16:04"
@@ -1823,6 +1855,8 @@ async function refreshAll(){
       if(_ck && _ck.gsz && !isNaN(_ck.gsz)){
         info1.gsz = _ck.gsz;
         info1.gszzl = _ck.gszzl;
+        if(_ck.dwjz && !isNaN(_ck.dwjz)){ info1.dwjz = _ck.dwjz; }                    /* 新格式：缓存里带官方昨收 */
+        else if(_ck.gszzl && !isNaN(_ck.gszzl)){ info1.dwjz = _ck.gsz / (1 + _ck.gszzl / 100); }  /* 旧格式兜底：反推官方昨收 */
         info1.gztime = (_ck.time || '') + ' 盘中缓存(旧)';
         info1.noGZ = false;
         info1.estType = 'cacheOld';
@@ -1831,7 +1865,7 @@ async function refreshAll(){
 
     /* 盘中成功取到估值 → 缓存今日最后估值，供收盘后空窗回放（非盘中时段不写，避免覆盖 close 占位） */
     if(fundIntraday && info1.gsz && !isNaN(info1.gsz)){
-      gzCache[todayStr + '_' + h.code] = {gsz: info1.gsz, gszzl: info1.gszzl, time: info1.gztime || new Date().toTimeString().slice(0, 8)};
+      gzCache[todayStr + '_' + h.code] = {gsz: info1.gsz, gszzl: info1.gszzl, dwjz: info1.dwjz, time: info1.gztime || new Date().toTimeString().slice(0, 8)};
     }
 
     /* 净值走势：图表 + 名称兜底 + 【权威 NAV 末点覆盖 Sina/自建/缓存估算】
@@ -1992,6 +2026,9 @@ async function refreshAll(){
     }
   }
   var sRes = renderStocks();
+  gFundRes = sum; gStockRes = sRes;
+  gSnapActive = !!(gSnap && (Date.now() - gSnap.ts) < 5 * 60 * 1000);
+  if(!gSnapActive){ try{ chrome.runtime.sendMessage({ type: 'ensureSnapshot' }); }catch(_){} }
   var summ = updateSummary(sum, sRes);
   applyPrivacyMask(); /* v1.1.2 隐私打码：金额刚写入就遮罩，不等后面 chart 的 await（否则等待期会露出真实数字） */
   marketStatus(sum.navTime);  /* 用本次拉到的"今日 NAV 发布时间"刷新顶部状态，覆盖"待净值公布"的永远待 */
@@ -2139,8 +2176,8 @@ async function refreshAll(){
     renderChart([], [], [], null, null);
   }
   } finally {
-    /* 把算好的结果快照广播给浮窗 / popup，保证三处一致（无论本次是否抛错都执行） */
-    publishCalcSnapshot();
+    /* 把算好的结果快照广播给浮窗 / popup（与 SW 互为写者，口径已统一，谁后写谁生效） */
+    publishCalcSnapshot(sum, sRes);
     /* 恢复按钮 + 清并发锁。无论 refreshAll 内部是否抛错都执行 */
     _refreshing = false;
     if(_rBtn){ _rBtn.disabled = false; _rBtn.innerHTML = _rBtnHtml || '<svg viewBox="0 0 24 24" style="width:16px;height:16px;fill:currentColor"><path d="M17.65 6.35C16.2 4.9 14.21 4 12 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08c-.82 2.33-3.04 4-5.65 4-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"/></svg>'; }

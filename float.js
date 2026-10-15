@@ -93,13 +93,22 @@
         var pd = (it.PDATE || '').replace(/\//g, '-');
         var y = pd.slice(0, 4), m = pd.slice(5, 7), d = pd.slice(8, 10);
         var isToday = (y == today.getFullYear() && m == (today.getMonth() + 1) && d == today.getDate());
-        map[it.FCODE] = {
-          gsz: isNaN(nav) ? null : nav,
-          dwjz: isNaN(nav) ? null : nav,
-          gszzl: isNaN(chg) ? null : chg,
-          estType: isToday ? 'nav' : 'yNav',
-          name: it.SHORTNAME || it.FCODE
-        };
+        /* 与看板表格同源：盘中优先东财官方盘中估值（GSZ 日期=今天且 09:15-15:05 才认） */
+        var gz = parseFloat(it.GSZ), gzzl = (it.GSZZL !== null && it.GSZZL !== undefined && it.GSZZL !== '') ? parseFloat(it.GSZZL) : NaN;
+        var gzDate = ((it.GZTIME || '') + '').slice(0, 10).replace(/\//g, '-');
+        var nowMin = today.getHours() * 60 + today.getMinutes();
+        var gzToday = gzDate === (today.getFullYear() + '-' + ('0' + (today.getMonth() + 1)).slice(-2) + '-' + ('0' + today.getDate()).slice(-2));
+        if (!isNaN(gz) && !isNaN(gzzl) && gzToday && nowMin >= 555 && nowMin <= 905) {
+          map[it.FCODE] = { gsz: gz, dwjz: isNaN(nav) ? gz : nav, gszzl: gzzl, estType: 'official', name: it.SHORTNAME || it.FCODE };
+        } else {
+          map[it.FCODE] = {
+            gsz: isNaN(nav) ? null : nav,
+            dwjz: isNaN(nav) ? null : nav,
+            gszzl: isNaN(chg) ? null : chg,
+            estType: isToday ? 'nav' : 'yNav',
+            name: it.SHORTNAME || it.FCODE
+          };
+        }
       });
     } catch (e) {}
     return map;
@@ -142,10 +151,14 @@
           if (!arr.length) return resolve(null);
           var lp = arr[arr.length - 1];
           var prevNav = parseFloat(lp.pre_nav), pct = parseFloat(lp.nav_pct);
-          if (isNaN(prevNav) || isNaN(pct) || lp.pre_date !== sinaToday()) return resolve(null);
+          /* 与看板表格同源同口径：直接采信序列末点（盘中=今日实时估算；盘前/周末=上一交易日收盘估算），
+             不再要求 pre_date===今天——盘前拒掉会让浮窗回退官方 NAVCHGRT 口径、与看板表格两套数字 */
+          if (isNaN(prevNav) || isNaN(pct)) return resolve(null);
+          /* 🔴 新浪 pre_nav 实为「今日估算净值」= 官方昨收×(1+pct/100)，不是昨收！
+             gsz 取 pre_nav；官方昨收反推 = pre_nav/(1+pct/100)——与看板表格同口径 */
           resolve({
-            gsz: +(prevNav * (1 + pct / 100)).toFixed(4),   // 今日估算净值（与看板 gsz=pre_nav*(1+pct/100) 一致）
-            dwjz: prevNav,                                   // 昨收净值
+            gsz: +prevNav.toFixed(4),                        // 今日估算净值（=新浪 pre_nav 本义）
+            dwjz: pct ? +(prevNav / (1 + pct / 100)).toFixed(4) : prevNav,   // 官方昨收（反推）
             gszzl: pct,
             gztime: String(lp.pre_date || '').slice(5) + ' ' + String(lp.min_time || '').slice(0, 5)
           });
@@ -196,17 +209,31 @@
 
     // 汇总
     var totMv = 0, totPnl = 0, totCum = 0, hasMv = false, hasPnl = false, hasCum = false;
+    /* 顶部汇总优先用 SW 算好的合计（单一数据源），与看板/角标零偏差；仅当快照过期才回退独立逐只算 */
+    var _snapFresh = S.snapTot && S.snapTs && (Date.now() - S.snapTs) < 5 * 60 * 1000;
+    if (_snapFresh) {
+      totMv = (S.snapTot.mv != null) ? S.snapTot.mv : totMv; hasMv = (S.snapTot.mv != null);
+      totPnl = (S.snapTot.pnl != null) ? S.snapTot.pnl : totPnl; hasPnl = (S.snapTot.pnl != null);
+      totCum = (S.snapTot.cum != null) ? S.snapTot.cum : totCum; hasCum = (S.snapTot.cum != null);
+    }
+    /* 关键：快照新鲜时，汇总已用上面的快照合计；下面逐项循环只负责渲染行，
+       绝不能再累加到 tot*，否则会变成「快照合计 + 逐项」= 翻倍（此前 -20,916 即看板 -10,458 的两倍）。
+       仅当快照过期（无新鲜快照）时才走逐项累加兜底。 */
     holdings.forEach(function (h) {
       var r = calcFund(h);
-      if (r.mv != null) { totMv += r.mv; hasMv = true; }
-      if (r.pnl != null) { totPnl += r.pnl; hasPnl = true; }
-      if (r.cum != null) { totCum += r.cum; hasCum = true; }
+      if (!_snapFresh) {
+        if (r.mv != null) { totMv += r.mv; hasMv = true; }
+        if (r.pnl != null) { totPnl += r.pnl; hasPnl = true; }
+        if (r.cum != null) { totCum += r.cum; hasCum = true; }
+      }
     });
     stocks.forEach(function (s) {
       var r = calcStock(s);
-      if (r.mv != null) { totMv += r.mv * fxRate(r.cur); hasMv = true; }
-      if (r.pnl != null) { totPnl += r.pnl * fxRate(r.cur); hasPnl = true; }
-      if (r.cum != null) { totCum += r.cum * fxRate(r.cur); hasCum = true; }
+      if (!_snapFresh) {
+        if (r.mv != null) { totMv += r.mv * fxRate(r.cur); hasMv = true; }
+        if (r.pnl != null) { totPnl += r.pnl * fxRate(r.cur); hasPnl = true; }
+        if (r.cum != null) { totCum += r.cum * fxRate(r.cur); hasCum = true; }
+      }
     });
 
     var priv = S.privacy;
@@ -250,6 +277,7 @@
     else if (S.estTime) tag.push('估算 ' + S.estTime);
     else if (S.fxSrc) tag.push('汇率:' + S.fxSrc);
     elStatus.textContent = tag.join(' · ') || ('已载入 ' + (holdings.length + stocks.length) + ' 项');
+    // 角标由 bg.js 单一负责（SW 始终在线重算快照时统一设置，含隐私模式清空），此处不再推。
   }
   function item(name, sub, pct, code, tip) {
     var cls = (pct == null || isNaN(pct)) ? 'flat' : upDown(pct);
@@ -274,6 +302,16 @@
     });
   }
   function snapFresh(ts) { return ts && (Date.now() - ts) < 5 * 60 * 1000; } // 5 分钟内视为新鲜
+  /* 一致性的关键：看板是单一数据源，popup/浮窗统一镜像看板发布的 fund_board_calc 快照。
+     原 5 分钟 gate 在看板标签页隐藏/关闭（自动刷新暂停）后会让快照过期，
+     导致 popup/浮窗改走独立取数、与冻结的看板数字脱节。
+     改为「同一天内即采信」，保证四处数字始终跟随看板（含盘前/周末的昨日盈亏口径）；
+     跨天或从无快照时才回退独立取数。 */
+  function snapUsable(snap) {
+    if (!snap || !snap.fundInfo || !snap.ts) return false;
+    var d1 = new Date(snap.ts), d2 = new Date();
+    return d1.getFullYear() === d2.getFullYear() && d1.getMonth() === d2.getMonth() && d1.getDate() === d2.getDate();
+  }
   function applyCalcSnapshot(snap) {
     if (!snap || !snap.fundInfo) return false;
     S.fundInfo = snap.fundInfo;
@@ -284,20 +322,27 @@
       S.fxSrc = '看板同步';
     }
     S.snapTs = snap.ts;
+    S.snapTot = { mv: snap.totMv, pnl: snap.totPnl, cum: snap.totCum };
     return true;
   }
 
   // ============ 刷新 ============
   // 优先复用看板快照（实时一致）；看板未开 / 快照过期才独立取数（回退口径）
+  function done() { S.loading = false; render(); }
   function refresh() {
     if (S.loading || !S.init) return;
     S.loading = true; render();
     readCalcSnapshot().then(function (snap) {
-      if (snap && snapFresh(snap.ts) && applyCalcSnapshot(snap)) {
-        S.loading = false; render();
-        return;
-      }
-      doFetch();
+      if (snap && snapUsable(snap) && applyCalcSnapshot(snap)) { done(); return; }
+      // 看板未开时由 SW 始终在线重算快照——保证四处数字一致，无需打开全屏看板
+      try {
+        chrome.runtime.sendMessage({ type: 'ensureSnapshot' }, function () {
+          readCalcSnapshot().then(function (snap2) {
+            if (snap2 && snapUsable(snap2) && applyCalcSnapshot(snap2)) { done(); }
+            else doFetch(); // SW 不可用时的兜底
+          });
+        });
+      } catch (e) { doFetch(); }
     });
   }
   function doFetch() {
@@ -320,6 +365,7 @@
           var code = pair[0], est = pair[1];
           if (!est) return;
           var cur = S.fundInfo[code] || {};
+          if (cur.estType === 'nav' || cur.estType === 'official') return; /* 官方净值已公布或已有东财盘中估值（与看板同源） → 不被新浪估算覆盖 */
           S.fundInfo[code] = {
             gsz: est.gsz,
             dwjz: est.dwjz,                // 已含昨收净值
@@ -452,44 +498,13 @@
     if (!window.__FLOAT_NO_PERSIST) {
       try { chrome.runtime.sendMessage({ type: 'floatStore', key: STORE_HIDDEN, val: '1' }); } catch (e) {}
     }
-    updateLauncher();
   }
   function reopen() {
     S.hidden = false; root.style.display = '';
     if (!window.__FLOAT_NO_PERSIST) {
       try { chrome.runtime.sendMessage({ type: 'floatStore', key: STORE_HIDDEN, val: '0' }); } catch (e) {}
     }
-    updateLauncher();
     refresh(); // 重新打开立即拉一次实时
-  }
-
-  // ============ 页面切换按钮（浮窗 ↔ 全屏看板） ============
-  var launcherEl = null;
-  function buildLauncher() {
-    if (window.__FLOAT_NO_LAUNCHER) return; // 浮窗小窗页面不注入切换按钮
-    if (document.getElementById('__fundFloatLaunch')) return;
-    var lb = document.createElement('div');
-    lb.id = '__fundFloatLaunch';
-    lb.style.cssText = 'position:fixed !important;right:14px !important;top:14px !important;left:auto !important;bottom:auto !important;z-index:2147483646 !important;background:#2563eb !important;color:#fff !important;border:none !important;border-radius:20px !important;padding:9px 16px !important;font:600 13px/1 -apple-system,"Segoe UI",Roboto,"PingFang SC","Microsoft YaHei",sans-serif !important;cursor:pointer !important;box-shadow:0 6px 20px rgba(37,99,235,.55) !important;user-select:none !important;letter-spacing:.5px !important;';
-    lb.textContent = '📊 浮窗';
-    lb.addEventListener('click', launcherClick);
-    var host = document.body || document.documentElement;
-    if (host) host.appendChild(lb);
-    launcherEl = lb;
-    updateLauncher();
-  }
-  function launcherClick() {
-    if (S.hidden || root.style.display === 'none') {
-      reopen();                 // 浮窗关闭 → 打开浮窗
-    } else {
-      try { chrome.runtime.sendMessage({ type: 'openDashboard' }); } catch (e) {}
-      doClose();               // 浮窗打开 → 切换到全屏看板并收起浮窗
-    }
-  }
-  function updateLauncher() {
-    if (!launcherEl) return;
-    if (S.hidden) { launcherEl.textContent = '浮窗'; launcherEl.title = '打开持仓浮窗'; }
-    else { launcherEl.textContent = '全屏'; launcherEl.title = '切换到全屏看板'; }
   }
 
   // ============ 装配 DOM（Shadow） ============
@@ -601,7 +616,6 @@
 
   // ============ 启动 ============
   function boot() {
-    try { buildLauncher(); } catch (e) {}
     try { build(); } catch (e) {}
     paintEye();
     // 默认关闭：仅当用户此前「打开过」(float_hidden==='0') 才自动显示
@@ -620,13 +634,11 @@
         applyOpacity(isNaN(op) ? 1 : op);
         paintEye();
         root.style.display = S.hidden ? 'none' : '';
-        updateLauncher();
         loadData();
       });
     } else {
       S.hidden = true;
       root.style.display = 'none';
-      updateLauncher();
       loadData();
     }
   }
@@ -677,7 +689,7 @@
       }
       if (changes.fund_board_calc) {
         var snap = changes.fund_board_calc.newValue;
-        if (snap && snapFresh(snap.ts)) { applyCalcSnapshot(snap); render(); }
+        if (snap && snapUsable(snap)) { applyCalcSnapshot(snap); render(); }
       }
     });
   } catch (e) {}
