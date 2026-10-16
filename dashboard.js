@@ -482,7 +482,7 @@ function calcRow(h, info){
 }
 
 /* ================= 渲染：指数 ================= */
-/* 指数候选池（含 A股 / 港股 / 美股 / 商品），首页卡片最多显示 7 个，用户自选 */
+/* 指数候选池（含 A股 / 港股 / 美股 / 商品），首页卡片数量不限，用户自选，卡片按数量自适应一行排列 */
 var IDX_ALL = [
   {code:'sh000001', label:'沪市主板', group:'A股', color:'#4f8cff'},
   {code:'sh000300', label:'沪深300', group:'A股', color:'#f04545'},
@@ -514,17 +514,17 @@ function loadIdxConfig(){
       if(Array.isArray(arr)){
         var valid = new Set(IDX_ALL.map(function(x){ return x.code; }));
         arr = arr.filter(function(c){ return valid.has(c); });
-        // 去重并截断，防止历史脏数据/重复触发导致状态错乱
+        // 去重，防止历史脏数据/重复触发导致状态错乱（不再截断数量上限）
         var seen = new Set(), out = [];
         arr.forEach(function(c){ if(!seen.has(c)){ seen.add(c); out.push(c); } });
-        return out.slice(0, 7);
+        return out;
       }
     }
   }catch(e){}
   return DEFAULT_IDX.slice();
 }
 function saveIdxConfig(arr){
-  try{ localStorage.setItem(IDX_KEY, JSON.stringify(arr.slice(0,7))); }catch(e){}
+  try{ localStorage.setItem(IDX_KEY, JSON.stringify(arr)); }catch(e){}
 }
 function getIdxItem(code){ return IDX_ALL.find(function(x){ return x.code === code; }); }
 function resetIdxConfig(){
@@ -605,7 +605,7 @@ function openIdxConfig(){
   var body = $('#idxConfigBody');
   if(body) body.innerHTML = html;
   var cnt = $('#idxConfigCount');
-  if(cnt){ cnt.textContent = cfg.length; cnt.className = 'idx-count' + (cfg.length >= 7 ? ' warn' : ''); }
+  if(cnt){ cnt.textContent = cfg.length; cnt.className = 'idx-count'; }
   var sub = $('#idxSubtitle');
   if(sub){
     var names = cfg.map(function(c){ var it = getIdxItem(c); return it ? it.label : c; }).join(' / ');
@@ -621,11 +621,6 @@ function toggleIdx(code, e){
   var pos = cfg.indexOf(code);
   if(checked){
     if(pos < 0){
-      if(cfg.length >= 7){
-        if(el) el.checked = false;
-        toast('最多选择 7 个指数');
-        return;
-      }
       cfg.push(code);
       saveIdxConfig(cfg);
       if(label) label.classList.add('active');
@@ -638,7 +633,7 @@ function toggleIdx(code, e){
     }
   }
   var cnt = $('#idxConfigCount');
-  if(cnt){ cnt.textContent = cfg.length; cnt.className = 'idx-count' + (cfg.length >= 7 ? ' warn' : ''); }
+  if(cnt){ cnt.textContent = cfg.length; cnt.className = 'idx-count'; }
   var sub = $('#idxSubtitle');
   if(sub){
     var names = cfg.map(function(c){ var it = getIdxItem(c); return it ? it.label : c; }).join(' / ');
@@ -1970,7 +1965,7 @@ async function refreshAll(){
   checkNoticeAlerts('fund');
   checkNoticeAlerts('stock');
 
-  /* 2. 指数（按用户自选配置拉取，最多 7 个） */
+  /* 2. 指数（按用户自选配置拉取，数量不限，卡片按数量自适应一行排列） */
   var idxCfg = loadIdxConfig();
   var tqCodes = idxCfg.filter(function(c){ var it = getIdxItem(c); return it && !it.gold; });
   var showGold = idxCfg.indexOf('hf_GC') >= 0;
