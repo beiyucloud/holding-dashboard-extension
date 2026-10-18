@@ -243,9 +243,9 @@ function bkParseFundMobapi(body){
       var nowMin=today.getHours()*60+today.getMinutes();
       var gzToday=(gzDate===today.getFullYear()+'-'+('0'+(today.getMonth()+1)).slice(-2)+'-'+('0'+today.getDate()).slice(-2));
       if(!isNaN(gz)&&!isNaN(gzzl)&&gzToday&&nowMin>=555&&nowMin<=905){
-        map[it.FCODE]={gsz:gz,dwjz:isNaN(nav)?gz:nav,gszzl:gzzl,estType:'official',name:it.SHORTNAME||it.FCODE};
+        map[it.FCODE]={gsz:gz,dwjz:isNaN(nav)?gz:nav,gszzl:gzzl,estType:'official',navDate:pd,name:it.SHORTNAME||it.FCODE};
       }else{
-        map[it.FCODE]={gsz:isNaN(nav)?null:nav,dwjz:isNaN(nav)?null:nav,gszzl:isNaN(chg)?null:chg,estType:isToday?'nav':'yNav',name:it.SHORTNAME||it.FCODE};
+        map[it.FCODE]={gsz:isNaN(nav)?null:nav,dwjz:isNaN(nav)?null:nav,gszzl:isNaN(chg)?null:chg,estType:isToday?'nav':'yNav',navDate:pd,name:it.SHORTNAME||it.FCODE};
       }
     });
   }catch(e){}
@@ -271,15 +271,75 @@ async function bkFetchSinaEst(code){
     var arr=d.networth||[]; if(!arr.length)return null;
     var lp=arr[arr.length-1];
     var prevNav=parseFloat(lp.pre_nav),pct=parseFloat(lp.nav_pct);
-    /* 与看板表格同源同口径：直接采信序列末点（盘中=今日实时估算；盘前/周末=上一交易日收盘估算）。
-       不再要求 pre_date===今天——盘中 pre_date 是今日没问题，但盘前/隔夜末点是昨日收盘估算，
-       拒掉它会让 SW 回退到官方 NAVCHGRT 口径，与看板表格（新浪收盘估算）出现两套数字。 */
     if(isNaN(prevNav)||isNaN(pct))return null;
+    /* 序列末点在盘中=今日实时估算；盘前/周末/节假日=上一交易日收盘估算（不可当今日估算用）。
+       返回估算所属日期（pre_date，归一 YYYY-MM-DD），由调用方只放行 est.date===今天：
+       盘前/周末拒掉后 SW 落到官方 NAVCHGRT（yNav 口径），与看板 showYesterdayView
+       （非交易日/9:30 前强制显示昨日官方净值）完全一致。
+       🔴 2026-10-17 周六实测：无日期门槛时 SW 把「昨估算−昨官方净值」的估算误差当成今日盈亏，
+       SW 角标 +1k vs 看板 -384 两套数字。 */
     /* 🔴 新浪字段语义实锤（2026-10-15 四基金对质）：pre_nav ≠ 昨收净值，而是
        「今日估算净值」= 官方昨收 × (1+nav_pct/100)。返回原始字段由调用方合并：
        gsz=pre_nav（今日估算净值），官方昨收由东财 NAV 提供、缺失时用 pre_nav/(1+pct/100) 反推。 */
-    return {gsz:+prevNav.toFixed(4),pct:pct};
+    var ed=(typeof lp.pre_date==='string')?lp.pre_date.replace(/\//g,'-'):'';
+    return {gsz:+prevNav.toFixed(4),pct:pct,date:ed};
   }catch(e){return null;}
+}
+/* ---- 结算口径精度对齐（2026-10-17）----
+   盘前/周末/节假日（estType='yNav'）时看板「昨日盈亏」= 市值 × 走势序列末两点反算的涨跌幅（全精度）；
+   而 mobapi 的 NAVCHGRT 只有 2 位小数 → SW 与看板差 ±2~4 元（实测 角标/浮窗 -386 vs 看板 -384）。
+   这里按 (代码, NAV日期) 缓存一次 pingzhongdata 的末两点涨跌幅，仅当走势末点日期 === 该基金 NAV 日期
+   时采信（防走势滞后一天用错涨跌幅）；缓存落 chrome.storage.local，同一 NAV 日只拉一次
+   （pingzhongdata 单文件 300~700KB，绝不能每分钟拉）。 */
+function bkExtractArr(txt,name){
+  var i=txt.indexOf('var '+name+' '); if(i<0)return null;
+  var s=txt.indexOf('[',i); if(s<0)return null;
+  var d=0,inStr=false,esc=false;
+  for(var k=s;k<txt.length;k++){
+    var ch=txt.charAt(k);
+    if(inStr){ if(esc)esc=false; else if(ch==='\\')esc=true; else if(ch==='"')inStr=false; continue; }
+    if(ch==='"'){ inStr=true; continue; }
+    if(ch==='[')d++;
+    else if(ch===']'){ d--; if(!d)return txt.slice(s,k+1); }
+  }
+  return null;
+}
+async function bkTrendPct(code){
+  try{
+    var r=await bkFetch('https://fund.eastmoney.com/pingzhongdata/'+code+'.js?t=1');
+    if(!bkOk(r))return null;
+    var raw=bkExtractArr(r.body,'Data_netWorthTrend'); if(!raw)return null;
+    var arr=JSON.parse(raw); if(!arr||arr.length<2)return null;
+    var last=arr[arr.length-1],prev=arr[arr.length-2];
+    var y1=Number(last.y),y0=Number(prev.y);
+    if(!(y0>0)||!isFinite(y1))return null;
+    var d=new Date(last.x);
+    var ds=d.getFullYear()+'-'+('0'+(d.getMonth()+1)).slice(-2)+'-'+('0'+d.getDate()).slice(-2);
+    return {date:ds,pct:(y1/y0-1)*100};
+  }catch(e){ return null; }
+}
+async function bkApplySettlePct(fundInfo){
+  var codes=Object.keys(fundInfo).filter(function(c){ var i=fundInfo[c]; return i&&i.estType==='yNav'; });
+  if(!codes.length)return;
+  var cache=await new Promise(function(res){
+    chrome.storage.local.get('fund_settle_pct_v1',function(o){
+      var c={}; try{ c=JSON.parse((o&&o.fund_settle_pct_v1)||'{}')||{}; }catch(e){ c={}; }
+      res(c);
+    });
+  });
+  var dirty=false;
+  await Promise.all(codes.map(function(code){
+    var info=fundInfo[code], hit=cache[code];
+    if(hit&&hit.date===info.navDate&&isFinite(hit.pct)){ info.gszzl=hit.pct; return null; }
+    return bkTrendPct(code).then(function(t){
+      if(!t)return;
+      cache[code]={date:t.date,pct:t.pct}; dirty=true;
+      if(t.date===info.navDate){ info.gszzl=t.pct; } /* 走势末点=NAV 日才采信 */
+    });
+  }));
+  if(dirty){
+    try{ if(Object.keys(cache).length>80){ cache={}; } var p={}; p.fund_settle_pct_v1=JSON.stringify(cache); chrome.storage.local.set(p); }catch(e){}
+  }
 }
 function bkCalcFundPnl(h,fundInfo,fx){
   var info=fundInfo[h.code]||null; var r={mv:null,pnl:null,cum:null};
@@ -340,10 +400,13 @@ async function computeSnapshot(){
             if(bkOk(fr))fundInfo=bkParseFundMobapi(fr.body);
             var ests=await Promise.all(fundCodes.map(bkFetchSinaEst));
             ests.forEach(function(est,i){ var code=fundCodes[i]; if(!est)return; var cur=fundInfo[code]||{}; if(cur.estType==='nav'||cur.estType==='official')return; /* 今日官方净值已公布或已有东财盘中估值（与看板同源） → 不被新浪估算覆盖 */
+              if(est.date!==bkSinaToday())return; /* 🔴 只认今日估算：盘前/周末末点是上一交易日收盘估算，放行会把估算误差当今日盈亏（2026-10-17 周六实测 SW+1k vs 看板-384）；拒掉后落 yNav 官方口径，与看板 showYesterdayView 一致 */
               /* gsz=新浪 pre_nav=今日估算净值；dwjz=官方昨收（东财 NAV 优先，缺失时 pre_nav/(1+pct/100) 反推）——
                  pnl = 份额×(gsz−dwjz) = 份额×官方昨收×pct/100，与看板表格同口径 */
               var dwjz=(cur.dwjz!=null&&!isNaN(cur.dwjz))?cur.dwjz:(est.pct?(est.gsz/(1+est.pct/100)):null);
               fundInfo[code]={gsz:est.gsz,dwjz:dwjz,gszzl:est.pct,estType:'est',name:(cur&&cur.name)||code}; });
+            /* 仍处于 yNav（盘前/周末/节假日）→ 用走势反算全精度涨跌幅，和看板「昨日盈亏」对齐 */
+            await bkApplySettlePct(fundInfo);
           }
           if(stockCodes.length||needFx){
             var all=stockCodes.concat(needFx?fxCodes:[]);
