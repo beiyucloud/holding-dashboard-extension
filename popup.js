@@ -455,15 +455,34 @@
   });
   $('ppRefresh').addEventListener('click', refresh);
   $('ppTheme').addEventListener('click', toggleTheme);
-  /* 网页浮窗：向当前标签发 floatToggle（该页无 content script 时会失败 → 提示） */
+  /* 网页浮窗：向当前标签发 floatToggle。页面早于扩展安装/更新打开时，旧 content script
+     已失效（Receiving end does not exist），仅靠刷新才能恢复 → 退避重试穷尽后改用
+     chrome.scripting（activeTab 授权）动态补注入 float.js 再试一次，免去手动刷新；
+     浏览器内置页(edge:// 等) / 扩展页无法注入 → 仍提示「普通网页才支持」 */
   $('ppFloat').addEventListener('click', function () {
     try {
       chrome.tabs.query({ active: true, currentWindow: true }, function (tabs) {
         if (!tabs || !tabs[0]) { toast('找不到当前标签页'); return; }
-        var tabId = tabs[0].id, tries = 0;
+        var tab = tabs[0], tabId = tab.id, tries = 0, injected = false;
+        function canInject(u) { return typeof u === 'string' && /^https?:/i.test(u); }
+        function injectFloat(cb) {
+          try {
+            /* 先清掉旧上下文残留的宿主节点，避免 float.js 顶部防重复注入误判提前 return */
+            chrome.scripting.executeScript({
+              target: { tabId: tabId },
+              func: function (id) { var el = document.getElementById(id); if (el) el.remove(); },
+              args: ['__fundFloatHost']
+            }, function () {
+              if (chrome.runtime.lastError) { cb(false); return; }
+              chrome.scripting.executeScript({ target: { tabId: tabId }, files: ['float.js'] }, function () {
+                cb(!chrome.runtime.lastError);
+              });
+            });
+          } catch (e) { cb(false); }
+        }
         /* 「接收端不存在」可能是页面加载早期 float.js(document_idle) 尚未就绪，
            属瞬时状态 → 按 300ms/800ms/1500ms 退避自动重试（共 3 次），
-           覆盖慢页面的注入延迟；全部失败才判定为不支持的页面 */
+           覆盖慢页面的注入延迟；穷尽后动态补注入一次；仍失败才判定为不支持的页面 */
         function sendFloat() {
           chrome.tabs.sendMessage(tabId, { type: 'floatToggle' }, function () {
             if (chrome.runtime.lastError) {
@@ -471,6 +490,14 @@
               if (/Receiving end does not exist|establish connection/i.test(m)) {
                 var wait = [300, 800, 1500][tries];
                 if (wait !== undefined) { tries++; setTimeout(sendFloat, wait); return; }
+                if (!injected && canInject(tab.url)) {
+                  injected = true;
+                  injectFloat(function (ok) {
+                    if (ok) { setTimeout(sendFloat, 150); return; }
+                    toast('浮窗未就绪：请刷新页面后重试（普通网页才支持）');
+                  });
+                  return;
+                }
                 toast('浮窗未就绪：请刷新页面后重试（普通网页才支持）');
               }
             }

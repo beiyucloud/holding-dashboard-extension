@@ -2556,6 +2556,8 @@ function openTrade(kind, code, dir){
   /* 可见字段：基金=日期 +(加仓金额 | 减仓份额)；股票=份额 + 价格 */
   $('#tradeDateRow').style.display = isFund ? '' : 'none';
   $('#tradeNavLabel').style.display = isFund ? '' : 'none';
+  $('#tradeLiveNav').style.display = (isFund && tradeState.dir === 'add') ? '' : 'none';
+  $('#tradeCostPreview').style.display = (isFund && tradeState.dir === 'add') ? '' : 'none';
   $('#redeemTierRow').style.display = (isFund && dir === 'sell') ? '' : 'none';
   $('#tradeAmountRow').style.display = (isFund && dir === 'add') ? '' : 'none';
   /* tradeSharesRow: 基金加仓隐、其它全显；stock 用 tradePriceRow 控制价 */
@@ -2614,6 +2616,7 @@ function openTrade(kind, code, dir){
   } else {
     if($('#tradeShares').focus) $('#tradeShares').focus();
   }
+  renderTradeCostPreview();
 }
 function closeTrade(){ $('#maskTrade').classList.remove('show'); tradeState = null; }
 
@@ -2693,6 +2696,39 @@ function _renderFundNavLabel(loading){
   }
   if(tradeState.navSrc.indexOf('暂用最新净值') >= 0 || tradeState.rateWarn) lbl.classList.add('warn');
   lbl.textContent = txt;
+}
+/* 加仓面板：实时净值 + 拉高/摊薄预览（仅基金加仓时显示） */
+function renderTradeCostPreview(){
+  var navEl = document.getElementById('tradeLiveNav');
+  var prevEl = document.getElementById('tradeCostPreview');
+  if(!navEl || !prevEl || !tradeState) return;
+  var isFundAdd = (tradeState.kind === 'fund' && tradeState.dir === 'add');
+  navEl.style.display = isFundAdd ? '' : 'none';
+  prevEl.style.display = isFundAdd ? '' : 'none';
+  if(!isFundAdd) return;
+  var info = fundInfo[tradeState.code] || {};
+  var curNav = (info.estType === 'nav' && info.gsz != null) ? info.gsz : info.dwjz;
+  var estNav = info.gsz;
+  navEl.innerHTML = '最新净值 <b>' + (curNav != null ? curNav.toFixed(4) : '--') + '</b> · 实时估算 <b>' + (estNav != null ? estNav.toFixed(4) : '--') + '</b>';
+  var h = _tradeFind('fund', tradeState.code);
+  var amt = parseFloat(document.getElementById('tradeAmount').value);
+  var nav = parseFloat(document.getElementById('tradePrice').value);
+  var fee = parseFloat(document.getElementById('tradeFee').value); if(isNaN(fee)) fee = 0;
+  if(isNaN(amt) || amt <= 0 || isNaN(nav) || nav <= 0){ prevEl.textContent = ''; return; }
+  if(!h || h.cost == null){ prevEl.textContent = '尚未录入持仓成本价，无法判断拉高/摊薄（可在批量编辑「成本价」补填）'; prevEl.className = 'tip warn'; return; }
+  prevEl.className = 'tip';
+  var shares = (amt - fee) / nav;
+  if(!isFinite(shares) || shares <= 0){ prevEl.textContent = ''; return; }
+  var oldShares = h.shares || 0, oldCost = h.cost;
+  /* 与 _applyAdd 同款均价公式：新均价 = (原份额×原均价 + 本次份额×净值 + 手续费) / (原份额 + 本次份额) */
+  var newCost = (oldShares * oldCost + shares * nav + fee) / (oldShares + shares);
+  var delta = newCost - oldCost;
+  var tag, color;
+  if(delta > 0.00000001){ tag = '↑ 拉高成本'; color = '#e04646'; }
+  else if(delta < -0.00000001){ tag = '↓ 摊薄成本'; color = '#1aa260'; }
+  else { tag = '持平'; color = ''; }
+  prevEl.innerHTML = '本次加仓后均价 <b>' + oldCost.toFixed(4) + '</b> → <b style="color:' + color + '">' + newCost.toFixed(4) + '</b>（' + tag
+    + (delta !== 0 ? ' ' + (delta > 0 ? '+' : '') + delta.toFixed(4) : '') + '）';
 }
 /* 减仓赎回档位 chips：让用户从天天基金解析到的赎回分档里手动选一档（覆盖 FIFO 估算） */
 function _renderRedeemTiers(){
@@ -2849,7 +2885,8 @@ function calcTradeFee(){
     if(isNaN(nav) || nav <= 0) return; /* 净值还没取到，不预填 */
     if(tradeState.dir === 'add'){
       var amt = parseFloat($('#tradeAmount').value);
-      _renderFundNavLabel();            /* 顺带刷新「约得份额 / 费率」 */
+      _renderFundNavLabel();
+      renderTradeCostPreview();            /* 顺带刷新「约得份额 / 费率」 */
       if(isNaN(amt) || amt <= 0) return;
       /* 优先用该基金真实的天天基金优惠申购费率（按金额选档），取不到才退回设置里的默认费率 */
       var t = (tradeState.rate && tradeState.rate.sub) ? pickSubRate(tradeState.rate.sub, amt) : null;
@@ -2861,6 +2898,7 @@ function calcTradeFee(){
       }
       tradeState.rateWarn = false;
       $('#tradeFee').value = fee > 0 ? fee.toFixed(2) : '0';
+      renderTradeCostPreview();
     } else {
       var sh = parseFloat($('#tradeShares').value);
       if(isNaN(sh) || sh <= 0){ _renderFundNavLabel(); return; }

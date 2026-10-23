@@ -981,7 +981,7 @@
 </div>
 
 <div class="footer" data-page-node-id="5mzn8eeIKhJiHZZYyCZBUS">
-  <div data-page-node-id="zUp8qF5bZSbN5uoUBsDvh0">看板版本 v182（2026-10-18）· 数据通道：<span id="srcStatus" data-page-node-id="z1wYSVq2SDR3rGEc2DuS8q">检测中…</span>（若有 ✗ 请刷新重试）· <a href="https://beiyucloud.taoxinyuan.com" target="_blank" rel="noopener noreferrer" style="color:var(--blue);text-decoration:none" data-page-node-id="DdTbDsjtUyJZgVdPL14zdg">持仓实时盈亏看板</a> · <a href="privacy.html" target="_blank" rel="noopener noreferrer" style="color:var(--blue);text-decoration:none" data-page-node-id="FefdJe82QUh4pQusOzTsHG">隐私政策</a></div>
+  <div data-page-node-id="zUp8qF5bZSbN5uoUBsDvh0">看板版本 v183（2026-10-23）· 数据通道：<span id="srcStatus" data-page-node-id="z1wYSVq2SDR3rGEc2DuS8q">检测中…</span>（若有 ✗ 请刷新重试）· <a href="https://beiyucloud.taoxinyuan.com" target="_blank" rel="noopener noreferrer" style="color:var(--blue);text-decoration:none" data-page-node-id="DdTbDsjtUyJZgVdPL14zdg">持仓实时盈亏看板</a> · <a href="privacy.html" target="_blank" rel="noopener noreferrer" style="color:var(--blue);text-decoration:none" data-page-node-id="FefdJe82QUh4pQusOzTsHG">隐私政策</a></div>
   数据来源：新浪财经（盘中实时估算；大盘资金流向图的备用源）· 天天基金移动端接口（净值/重仓股）· 腾讯行情（指数 / 国际金价）· 同花顺（涨跌家数的备用源，沪深两市口径）· 东方财富（个股实时行情 / 涨跌家数 / 行业板块 / 国际金价 / 离岸人民币汇率）。涨跌家数与大盘资金流向图都按「东财优先、备用源兜底」取数，备用源生效时卡片上会标注实际来源与口径。<br data-page-node-id="PZMJhv4er1FN8SaVQfTn8n">
   计算口径：美股 / 港股按实时汇率折算为人民币后计入总市值与盈亏（可在「提醒设置 → 汇率折算」手填覆盖）；录入口径：成本价与加仓 / 减仓成交价一律按原币填写（港股港元 HK$、美股美元 $），不要换算成人民币填；填份额时 今日盈亏 = 份额 ×（估算净值 − 昨日净值）（盘中/盘后显示实时估算）；持有收益率 = 已结算市值 ÷（份额 × 成本价）− 1，净值未公布时沿用上一交易日确认净值、不随盘中估值跳动，净值公布后自动更新；未填份额时按「持有市值 × 估算涨幅」近似。<br data-page-node-id="nmwS0MHOUCZIY8BU70uad3">
   「实时估算」为新浪基于基金前十大重仓股/债券/ETF 的加权估算（分钟级）；「重仓估算」为本页按前十大重仓股实时行情的自建兜底估算。估算均基于上季持仓，与实际净值有偏差，仅供参考。<br data-page-node-id="CDL3UwBopiRFtyToi6tonR">
@@ -1200,6 +1200,7 @@
       <span class="close-x" data-act="closeTrade" data-page-node-id="L7s8nkcuRU5jA6DcGgxDPX">×</span>
     </h3>
     <div class="tip" id="tradeCur" data-page-node-id="0CjMwGGMqDuspN8M6I6ANO">当前份额 -- · 当前均价 --</div>
+    <div class="tip" id="tradeLiveNav" style="display:none" data-page-node-id="zLiveNav01"></div>
     <div class="field" id="tradeDateRow" style="display:none" data-page-node-id="ew6VoxpVktf10ZtoLGjEWF">
       <label data-page-node-id="5RVnHD7tMO7RqDAssdnrKv">加仓 / 减仓日期（取当日收盘净值）</label>
       <input id="tradeDate" type="date" data-evt="input" data-fns="resolveFundNav" data-page-node-id="pHDPwGEXN6AYB5hA18Afwv">
@@ -1218,13 +1219,14 @@
     </div>
     <div class="tip" id="tradeRangeTip" style="display:none" data-page-node-id="PmFtMrJLAHmATAu7KhGycW"></div>
     <div class="tip" id="tradeNavLabel" style="display:none" data-page-node-id="dIo9XHFXLumzBuApFYRW8F"></div>
+    <div class="tip" id="tradeCostPreview" style="display:none" data-page-node-id="zCostPrev01"></div>
     <div id="redeemTierRow" style="display:none" data-page-node-id="QijDdSYbTSd4XRT0CsRdd9">
       <div class="field-label" data-page-node-id="i6DyVRA1c02aLg1U5TbyTg">减仓费率档（按持仓时长，可手动选一档覆盖 FIFO）</div>
       <div class="redeem-tiers" id="redeemTierList" data-page-node-id="w2ZnypI0YhEKHh15SBdHM1"></div>
     </div>
     <div class="field" data-page-node-id="D5cZUJZoAF8gSe8Fauc4Pg">
       <label data-page-node-id="ClAJsRagshVApbC4zNUcXY">手续费（元）</label>
-      <input id="tradeFee" placeholder="自动估算，可改" type="number" min="0" step="0.01" data-page-node-id="963piykEiwbLDXJkf6cfvL">
+      <input id="tradeFee" placeholder="自动估算，可改" type="number" min="0" step="0.01" data-evt="input" data-fns="renderTradeCostPreview" data-page-node-id="963piykEiwbLDXJkf6cfvL">
     </div>
     <div class="tip-banner" data-page-node-id="d4QOQvz371bnpLh4pKNp5U"><span class="ti" data-page-node-id="Kh2UwC9k3WKSCzaJf66B6r">💡</span><span data-page-node-id="mm3jWImRDaVK6QKmajpoHE">本看板只计算盈亏，不实现交易</span></div>
 
