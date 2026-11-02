@@ -1393,6 +1393,54 @@ function applyCardVis(){
   }, 0);
 }
 
+/* ================= 表头排序 ================= */
+var fundSort = {key:null, dir:1};
+var stockSort = {key:null, dir:1};
+
+/* 生成 <tr> 上的 data-s-* 排序键（原始数值/字符串，空值存空串） */
+function sortAttr(k, v){
+  if(v === null || v === undefined || (typeof v === 'number' && isNaN(v))) v = '';
+  var s = String(v);
+  s = s.replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  return ' data-s-' + k + '="' + s + '"';
+}
+/* 按 data-s-<key> 重排 tbody 行（合计行恒置底），dir: 1 升序 / -1 降序；空值恒置底 */
+function applyRowSort(tbody, key, dir){
+  if(!tbody || !key) return;
+  var rows = Array.prototype.slice.call(tbody.querySelectorAll('tr:not(.total-row)'));
+  var total = tbody.querySelector('tr.total-row');
+  var numRe = /^-?\d+(\.\d+)?$/;
+  rows.sort(function(a, b){
+    var va = a.getAttribute('data-s-' + key), vb = b.getAttribute('data-s-' + key);
+    var aNull = (va === null || va === ''), bNull = (vb === null || vb === '');
+    if(aNull && bNull) return 0;
+    if(aNull) return 1;
+    if(bNull) return -1;
+    var ra = numRe.test(va) ? parseFloat(va) : va;
+    var rb = numRe.test(vb) ? parseFloat(vb) : vb;
+    var r = (typeof ra === 'number') ? (ra - rb) : ra.localeCompare(rb, 'zh-Hans-CN');
+    return dir * r;
+  });
+  rows.forEach(function(r){ tbody.appendChild(r); });
+  if(total) tbody.appendChild(total);
+}
+/* 更新表头升降序箭头 */
+function updateSortHeaders(tableEl, key, dir){
+  if(!tableEl) return;
+  Array.prototype.forEach.call(tableEl.querySelectorAll('th[data-key]'), function(th){
+    th.classList.remove('sort-asc', 'sort-desc');
+    if(th.getAttribute('data-key') === key) th.classList.add(dir > 0 ? 'sort-asc' : 'sort-desc');
+  });
+}
+/* 表头点击：none → 升序 → 降序 → none 循环 */
+function onSortColumn(table, key){
+  var st = (table === 'fund') ? fundSort : stockSort;
+  if(st.key === key){
+    if(st.dir === 1) st.dir = -1; else st.key = null;
+  } else { st.key = key; st.dir = 1; }
+  if(table === 'fund') renderHoldings(); else renderStocks();
+}
+
 /* ================= 渲染：持仓与汇总 ================= */
 function renderHoldings(){
   var html = '', totalMv = 0, totalPnl = 0, totalCost = 0, hasCost = false, n = 0, realizedAll = 0, anyTime = '', noGzCount = 0, holdEstCount = 0, closeEstCount = 0, navTime = '';
@@ -1448,7 +1496,7 @@ function renderHoldings(){
     }else{
       pctCell = '<td class="muted">--</td>';
     }
-    html += '<tr><td title="' + escHtml(name) + '"><span class="qlink" data-act="openQuote" data-args=\'["' + h.code + '","fund"]\'>' + escHtml(name) + '</span>' + suffix + '</td>'
+    html += '<tr' + sortAttr('name', name) + sortAttr('code', h.code) + sortAttr('mv', c.mv) + sortAttr('pnl', c.pnl) + sortAttr('pct', c.pct) + sortAttr('cumPct', c.cumPct) + sortAttr('cumPnl', c.cumPnl) + sortAttr('realized', h.realized) + '><td title="' + escHtml(name) + '"><span class="qlink" data-act="openQuote" data-args=\'["' + h.code + '","fund"]\'>' + escHtml(name) + '</span>' + suffix + '</td>'
           + '<td>' + h.code + '</td>'
           + '<td>' + fmtNum(c.mv) + '</td>'
           + '<td class="' + cls(c.pnl) + '">' + fmtSigned(c.pnl) + '</td>'
@@ -1476,6 +1524,10 @@ function renderHoldings(){
           + '<td></td></tr>';
   }
   $('#holdBody').innerHTML = html || '<tr><td colspan="9" class="muted" style="text-align:center;padding:20px">暂无基金持仓，点击顶部 <b>+</b> 按钮添加</td></tr>';
+  /* 表头排序：渲染后按当前排序态重排行（合计行恒置底） */
+  if(fundSort.key){ applyRowSort($('#holdBody'), fundSort.key, fundSort.dir); }
+  var fTbl = $('#holdBody').closest('table');
+  if(fTbl) updateSortHeaders(fTbl, fundSort.key, fundSort.dir);
 
   /* 兼容 hasPnl 标志（原本是单独循环算的） */
   var hasPnl = false, latestNavDate = '';
@@ -3424,7 +3476,7 @@ function renderStocks(){
     /* v158 外币：已实现同样附原币小字 */
     var _realCell = (s.realized ? fmtSigned(s.realized * _fx) : '--');
     if(_fxForeign && s.realized){ _realCell += '<div class="muted" style="font-size:11px">' + _fxSmall(s.realized) + '</div>'; }
-    html += '<tr><td title="' + escHtml(_stkNm) + '"><span class="qlink" data-act="openQuote" data-args=\'["' + s.code + '","stock"]\'>' + escHtml(_stkNm) + '</span></td>'
+    html += '<tr' + sortAttr('name', _stkNm) + sortAttr('type', _stkType) + sortAttr('code', s.code.replace(/^(sh|sz|hk|us|bj)/, '')) + sortAttr('price', (_fxForeign && price !== null) ? price * _fx : price) + sortAttr('mv', mvCny) + sortAttr('shares', s.shares) + sortAttr('cost', (_fxForeign && s.cost) ? s.cost * _fx : s.cost) + sortAttr('pct', pct) + sortAttr('pnl', pnlCny) + sortAttr('cumPct', cumPct) + sortAttr('cumPnl', cumPnlCny) + sortAttr('realized', (_fxForeign && s.realized) ? s.realized * _fx : s.realized) + '><td title="' + escHtml(_stkNm) + '"><span class="qlink" data-act="openQuote" data-args=\'["' + s.code + '","stock"]\'>' + escHtml(_stkNm) + '</span></td>'
           + '<td>' + typeTag(_stkType) + '</td>'
           + '<td>' + s.code.replace(/^(sh|sz|hk|us|bj)/, '') + '</td>'
           + '<td>' + _priceCell + '</td>'
@@ -3450,6 +3502,10 @@ function renderStocks(){
           + '<td></td></tr>';
   }
   $('#stockBody').innerHTML = html || '<tr><td colspan="12" class="muted" style="text-align:center;padding:20px">暂无股票持仓，点击顶部 <b>+</b> 按钮添加</td></tr>';
+  /* 表头排序：渲染后按当前排序态重排行（合计行恒置底） */
+  if(stockSort.key){ applyRowSort($('#stockBody'), stockSort.key, stockSort.dir); }
+  var sTbl = $('#stockBody').closest('table');
+  if(sTbl) updateSortHeaders(sTbl, stockSort.key, stockSort.dir);
   /* 整段 section 显示控制：无任何股票持仓时连标题带表一起隐藏 */
   $('#stockSection').style.display = (cardVis().stock && stocks.length) ? '' : 'none';
   /* v156 汇率脚注：说明外币持仓用的折算汇率与来源，避免"这数怎么来的" */
