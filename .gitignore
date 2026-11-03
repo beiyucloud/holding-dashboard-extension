@@ -1,0 +1,5 @@
+# Edge 加载未打包扩展时自动生成，不入库
+_metadata/
+node_modules/
+*.pem
+*.crx

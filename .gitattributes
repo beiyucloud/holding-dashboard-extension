@@ -1,0 +1,9 @@
+# 防止 git 把二进制当文本做换行/编码转换（图标曾被此坑破坏）
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.zip binary
+*.woff binary
+*.woff2 binary
