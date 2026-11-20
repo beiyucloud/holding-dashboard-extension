@@ -604,6 +604,50 @@
   .footer{font-size:12px;color:var(--muted);padding:10px 4px 20px;line-height:1.8;}
   .err{color:#e8a13a;font-size:12px;}
 
+  /* ===== 微信入口弹窗（公众号 + 小程序双码，远程加载官方码，不打包进扩展）===== */
+  .wechat-modal{width:auto;max-width:min(440px,94vw);text-align:center;}
+  .wechat-modal h3{justify-content:center;font-size:16px;margin-bottom:2px;}
+  .wechat-modal .wx-tip{font-size:12px;color:var(--muted);line-height:1.6;margin:6px 0 12px;}
+  .wechat-modal .wx-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;}
+  .wechat-modal .wx-card{min-width:0;background:var(--bg);border:1px solid var(--border);border-radius:10px;padding:12px 8px 10px;}
+  .wechat-modal .wx-card .wx-name{font-size:13px;font-weight:700;color:var(--text);margin-bottom:2px;}
+  .wechat-modal .wx-card .wx-sub{font-size:11px;color:var(--muted);margin-bottom:8px;white-space:nowrap;}
+  .wechat-modal .wx-qr-wrap{width:100%;max-width:158px;aspect-ratio:1/1;height:auto;margin:0 auto;border-radius:8px;background:#fff;display:flex;align-items:center;justify-content:center;overflow:hidden;border:1px solid var(--border);}
+  .wechat-modal .wx-qr{width:100%;height:100%;object-fit:contain;}
+  .wechat-modal .wx-qr-wrap.noimg .wx-qr{display:none;}
+  .wechat-modal .wx-fallback{display:none;font-size:11px;color:var(--muted);line-height:1.5;padding:10px;text-align:center;}
+  .wechat-modal .wx-qr-wrap.noimg .wx-fallback{display:block;}
+  .wechat-modal .wx-copy-bar{display:flex;align-items:center;gap:10px;margin-top:12px;padding:9px 11px;background:var(--bg);border:1px solid var(--border);border-radius:9px;text-align:left;}
+  .wechat-modal .wx-copy-bar .wx-copy-txt{flex:1;font-size:11px;color:var(--muted);line-height:1.5;}
+  .wechat-modal .wx-copy-bar .wx-mini-copy{flex:0 0 auto;font-size:12px;font-weight:700;white-space:nowrap;padding:7px 11px;border:1px solid var(--blue);border-radius:7px;background:rgba(79,140,255,.12);color:var(--blue);cursor:pointer;}
+  .wechat-modal .wx-copy-bar .wx-mini-copy:hover{background:rgba(79,140,255,.22);}
+  /* ===== 复制成功后的跨端步骤引导卡 ===== */
+  .copy-guide-modal{width:auto;max-width:min(420px,94vw);text-align:left;}
+  .copy-guide-modal h3{justify-content:flex-start;font-size:16px;}
+  .cg-lead{font-size:12px;color:var(--muted);line-height:1.6;margin:6px 0 14px;}
+  .cg-lead b{color:var(--blue);}
+  .cg-step{display:flex;gap:10px;margin-bottom:12px;}
+  .cg-num{flex:0 0 22px;width:22px;height:22px;border-radius:50%;background:var(--blue);color:#fff;font-size:12px;font-weight:700;display:flex;align-items:center;justify-content:center;}
+  .cg-txt{font-size:12.5px;color:var(--text);line-height:1.6;}
+  .cg-txt .hl{color:var(--blue);font-weight:700;}
+  .cg-note{font-size:11px;color:var(--muted);line-height:1.6;margin:-4px 0 0 32px;padding:8px 10px;background:var(--bg);border:1px solid var(--border);border-radius:8px;}
+  .wechat-modal .wx-foot{font-size:11px;color:var(--muted);line-height:1.6;margin-top:12px;}
+  /* ===== 微信入口首次引导气泡（更新后第一次打开，指向顶栏微信按钮；一次性）===== */
+  .wx-guide-tip{position:fixed;z-index:72;width:252px;background:var(--panel);border:1px solid var(--blue);border-radius:10px;padding:12px 13px 11px;box-shadow:0 10px 30px rgba(0,0,0,.35);}
+  .wx-guide-tip[hidden]{display:none;}
+  .wx-guide-tip::before{content:'';position:absolute;top:-7px;right:var(--wx-arrow,18px);width:12px;height:12px;background:var(--panel);border-left:1px solid var(--blue);border-top:1px solid var(--blue);transform:rotate(45deg);}
+  .wx-guide-tip .wt-title{font-size:13px;font-weight:700;color:var(--text);padding-right:20px;display:flex;align-items:center;gap:6px;}
+  .wx-guide-tip .wt-new{font-size:10px;font-weight:700;color:#fff;background:#e8503a;border-radius:8px;padding:1px 6px;letter-spacing:.3px;}
+  .wx-guide-tip .wt-x{position:absolute;top:6px;right:7px;width:18px;height:18px;display:flex;align-items:center;justify-content:center;border:none;border-radius:4px;background:transparent;color:var(--muted);font-size:15px;line-height:1;padding:0;cursor:pointer;}
+  .wx-guide-tip .wt-x:hover{color:var(--text);background:var(--btn);}
+  .wx-guide-tip .wt-body{font-size:12px;color:var(--muted);line-height:1.6;margin:7px 0 10px;}
+  .wx-guide-tip .wt-ops{display:flex;gap:7px;}
+  .wx-guide-tip .wt-ops .btn{flex:1;padding:6px 8px;font-size:12px;min-height:0;}
+  @keyframes wxPulse{0%,100%{box-shadow:0 0 0 0 rgba(79,140,255,.55);}50%{box-shadow:0 0 0 6px rgba(79,140,255,0);}}
+  .btn.wx-hl{border-color:var(--blue)!important;animation:wxPulse 1.4s ease-out 3;}
+  body.widget-mode .wx-guide-tip{display:none;}
+
+
   /* ===== 打赏区块：紧凑卡片式（左右布局，widget 模式因 footer 隐藏而不显示）===== */
   /* ===== 打赏弹窗 ===== */
   .donate-modal{max-width:320px;text-align:center;}
@@ -825,6 +869,7 @@
   <button class="btn btn-icon keep-widget" style="position:relative" data-act="openAlerts" title="提醒" aria-label="提醒" data-page-node-id="oDJ2hL1Ut5PabLg0Yv3iQC"><svg viewBox="0 0 24 24" data-page-node-id="U8OF8OTtHvR984ztv4VcIn"><path d="M12 22c1.1 0 2-.9 2-2h-4c0 1.1.9 2 2 2zm6-6v-5c0-3.07-1.63-5.64-4.5-6.32V4c0-.83-.67-1.5-1.5-1.5s-1.5.67-1.5 1.5v.68C7.64 5.36 6 7.92 6 11v5l-2 2v1h16v-1l-2-2zm-2 1H8v-6c0-2.48 1.51-4.5 4-4.5s4 2.02 4 4.5v6z" data-page-node-id="bOCsB2FWSJ9Lk5Q63HLn0Q"/></svg><span class="badge" id="alertBadge" style="display:none" data-page-node-id="YBcNgrNyIEUPBAOLfpiOA5">0</span></button>
   <span class="topbar-sep" aria-hidden="true" data-page-node-id="3HU7YDNETFnlZ1nOiVHEP6"></span>
   <a class="btn ghost" href="https://beiyucloud.taoxinyuan.com" target="_blank" rel="noopener noreferrer" style="text-decoration:none" title="查看使用说明与下载" data-page-node-id="SvEusCPSZfbDCwu0vcyKtP">官网</a>
+  <button class="btn btn-icon" data-act="openWechat" title="微信入口（公众号 / 小程序）" aria-label="微信入口" data-page-node-id="wxEntryTop01"><svg viewBox="0 0 24 24" data-page-node-id="wxEntryTopSvg"><path d="M8.7 3C4.9 3 2 5.6 2 8.9c0 1.9 1 3.6 2.6 4.7L4 16l2.6-1.2c.7.2 1.4.3 2.1.3h.5a5.6 5.6 0 0 1-.2-1.5c0-3.3 3-5.9 6.7-5.9h.5C15.7 4.9 12.5 3 8.7 3zM6.5 7.6a1 1 0 1 1 0-2 1 1 0 0 1 0 2zm4.4 0a1 1 0 1 1 0-2 1 1 0 0 1 0 2zm5.2 1.7c-3.2 0-5.8 2.1-5.8 4.8 0 2.6 2.6 4.8 5.8 4.8.7 0 1.3-.1 1.9-.3l2.4 1.1-.6-2c1.3-.9 2.1-2.2 2.1-3.6 0-2.7-2.6-4.8-5.8-4.8zm-1.9 3.2a.9.9 0 1 1 0-1.8.9.9 0 0 1 0 1.8zm3.8 0a.9.9 0 1 1 0-1.8.9.9 0 0 1 0 1.8z" data-page-node-id="wxEntryTopPath"/></svg></button>
   <button class="btn gold" data-act="openDonate" data-page-node-id="q8tOsmsFQnF2rwtjC1vcVU">☕ 打赏</button>
   <button class="btn btn-icon" id="themeToggle" data-act="toggleTheme" title="切换浅色 / 深色" aria-label="切换主题" data-page-node-id="yAysDpXvGxh9I3k7CldgPR"><svg viewBox="0 0 24 24" data-page-node-id="tvS48ekphHTVUlfWqR9xFW"><path d="M12 3c-4.97 0-9 4.03-9 9s4.03 9 9 9 9-4.03 9-9c0-.46-.04-.92-.1-1.36a5.389 5.389 0 0 1-4.4 2.26 5.403 5.403 0 0 1-3.14-9.8c-.44-.06-.9-.1-1.36-.1z" data-page-node-id="KYSYwqpODHYmgYnlIL1Fha"/></svg></button>
 </div>
@@ -986,9 +1031,9 @@
 </div>
 
 <div class="footer" data-page-node-id="5mzn8eeIKhJiHZZYyCZBUS">
-  <div data-page-node-id="zUp8qF5bZSbN5uoUBsDvh0">看板版本 v185（2026-11-03）· 数据通道：<span id="srcStatus" data-page-node-id="z1wYSVq2SDR3rGEc2DuS8q">检测中…</span>（若有 ✗ 请刷新重试）· <a href="https://beiyucloud.taoxinyuan.com" target="_blank" rel="noopener noreferrer" style="color:var(--blue);text-decoration:none" data-page-node-id="DdTbDsjtUyJZgVdPL14zdg">持仓小助手（基金股票看板）</a> · <a href="privacy.html" target="_blank" rel="noopener noreferrer" style="color:var(--blue);text-decoration:none" data-page-node-id="FefdJe82QUh4pQusOzTsHG">隐私政策</a></div>
+  <div data-page-node-id="zUp8qF5bZSbN5uoUBsDvh0">看板版本 v186（2026-11-20）· 数据通道：<span id="srcStatus" data-page-node-id="z1wYSVq2SDR3rGEc2DuS8q">检测中…</span>（若有 ✗ 请刷新重试）· <a href="https://beiyucloud.taoxinyuan.com" target="_blank" rel="noopener noreferrer" style="color:var(--blue);text-decoration:none" data-page-node-id="DdTbDsjtUyJZgVdPL14zdg">持仓小助手（基金股票看板）</a> · <a href="privacy.html" target="_blank" rel="noopener noreferrer" style="color:var(--blue);text-decoration:none" data-page-node-id="FefdJe82QUh4pQusOzTsHG">隐私政策</a></div>
   数据来源：新浪财经（盘中实时估算；大盘资金流向图的备用源）· 天天基金移动端接口（净值/重仓股）· 腾讯行情（指数 / 国际金价）· 同花顺（涨跌家数的备用源，沪深两市口径）· 东方财富（个股实时行情 / 涨跌家数 / 行业板块 / 国际金价 / 离岸人民币汇率）。涨跌家数与大盘资金流向图都按「东财优先、备用源兜底」取数，备用源生效时卡片上会标注实际来源与口径。<br data-page-node-id="PZMJhv4er1FN8SaVQfTn8n">
-  计算口径：美股 / 港股按实时汇率折算为人民币后计入总市值与盈亏（可在「提醒设置 → 汇率折算」手填覆盖）；录入口径：成本价与加仓 / 减仓成交价一律按原币填写（港股港元 HK$、美股美元 $），不要换算成人民币填；填份额时 今日盈亏 = 份额 ×（估算净值 − 昨日净值）（盘中/盘后显示实时估算）；持有收益率 = 已结算市值 ÷（份额 × 成本价）− 1，净值未公布时沿用上一交易日确认净值、不随盘中估值跳动，净值公布后自动更新；未填份额时按「持有市值 × 估算涨幅」近似。<br data-page-node-id="nmwS0MHOUCZIY8BU70uad3">
+  计算口径：美股 / 港股按实时汇率折算为人民币后计入总市值与盈亏（可在「提醒设置 → 汇率折算」手填覆盖）；录入口径：成本价与加仓 / 减仓成交价一律按原币填写（港股港元 HK$、美股美元 $），不要换算成人民币填；填份额时 今日盈亏 = 份额 ×（估算净值 − 昨日净值）（盘中/盘后显示实时估算）；持有收益率 =（已结算市值 + 累计分红）÷（份额 × 成本价）− 1，累计分红计入总回报（与基金 App 口径一致），净值未公布时沿用上一交易日确认净值、不随盘中估值跳动，净值公布后自动更新；未填份额时按「持有市值 × 估算涨幅」近似。<br data-page-node-id="nmwS0MHOUCZIY8BU70uad3">
   「实时估算」为新浪基于基金前十大重仓股/债券/ETF 的加权估算（分钟级）；「重仓估算」为本页按前十大重仓股实时行情的自建兜底估算。估算均基于上季持仓，与实际净值有偏差，仅供参考。<br data-page-node-id="CDL3UwBopiRFtyToi6tonR">
   本看板仅为信息整理工具，不构成投资建议。市场有风险，投资需谨慎。
 </div>
@@ -1018,6 +1063,10 @@
       <label data-page-node-id="Li7FuZ4xJAmn35SX3yiwBK">持有市值（元，未填份额时必填）</label>
       <input id="inAmount" placeholder="如 12345.67" type="number" data-page-node-id="WF27MvDIztyN1FRie3nirA">
     </div>
+    <div class="field" data-page-node-id="dvFldDiv">
+      <label data-page-node-id="dvLblDiv">累计分红（元，选填）</label>
+      <input id="inDividend" placeholder="如 458.64（现金分红，计入总回报）" type="number" step="0.01" data-page-node-id="dvInpDiv">
+    </div>
     <!-- 已实现盈亏 / 操作次数（仅编辑已有持仓时显示；可一键清零测试残留） -->
     <div class="field" id="realizedRow" style="display:none" data-page-node-id="DCkxCGGHEZwqI1MO1lCWRv">
       <label data-page-node-id="TU49TjRummPkSUzi9yKMi3">已实现盈亏 / 操作次数</label>
@@ -1046,7 +1095,7 @@
     </div>
     <div class="batch-scroll" id="batchFundPanel" data-page-node-id="iONobLTeSVxPoz24r8W0I3">
       <table data-page-node-id="E1zT1crwHbxMBdiPVCynzD">
-        <thead data-page-node-id="8DR8fXYFvoS3AquurmK8eZ"><tr data-page-node-id="MXatnwyHglOJ7rt7TD4wa2"><th style="text-align:left" data-page-node-id="1Xwdjtb58ct4kaxEbVKLer">代码</th><th style="text-align:left" data-page-node-id="0vwUoZhPSPy5p3JmFIE9O2">基金名称</th><th data-page-node-id="VpfNAL13NcB5vPHm3pyeBV">持有份额</th><th data-page-node-id="9fsriPR3WxUyC7W63ucdIN">成本单价</th><th data-page-node-id="tSRA5PIQ6r5PnJ2Nfg7nNz">持有市值(元)</th><th data-page-node-id="3wSy5r4NEQY40bDTBVrG2O"></th></tr></thead>
+        <thead data-page-node-id="8DR8fXYFvoS3AquurmK8eZ"><tr data-page-node-id="MXatnwyHglOJ7rt7TD4wa2"><th style="text-align:left" data-page-node-id="1Xwdjtb58ct4kaxEbVKLer">代码</th><th style="text-align:left" data-page-node-id="0vwUoZhPSPy5p3JmFIE9O2">基金名称</th><th data-page-node-id="VpfNAL13NcB5vPHm3pyeBV">持有份额</th><th data-page-node-id="9fsriPR3WxUyC7W63ucdIN">成本单价</th><th data-page-node-id="tSRA5PIQ6r5PnJ2Nfg7nNz">持有市值(元)</th><th data-page-node-id="divBatchHdr">累计分红(元)</th><th data-page-node-id="3wSy5r4NEQY40bDTBVrG2O"></th></tr></thead>
         <tbody id="batchBody" data-page-node-id="PzzCCgITLN6VMI1N9MCLiC"></tbody>
       </table>
     </div>
@@ -1319,6 +1368,8 @@
     <div class="alert-chks alert-inline" id="dataOpsRow" style="border-top:none;">
       <button class="btn teal" data-act="exportData" title="导出全部持仓为 JSON 备份文件">导出</button>
       <button class="btn teal" data-act="clickImportFile" title="从 JSON 备份文件导入持仓">导入</button>
+      <button class="btn teal" data-act="copyForMini" title="把持仓复制为文本，粘贴到手机小程序即可导入">复制给小程序</button>
+      <button class="btn teal" data-act="pasteFromMini" title="读取剪贴板里从小伙伴小程序复制的持仓文本并导入">从小程序粘贴</button>
       <button class="btn ghost" data-act="clearAllRealized" title="把所有基金与股票的「已实现盈亏 / 操作次数」清零（清测试残留用）">清空已实现</button>
     </div>
 
@@ -1415,6 +1466,67 @@
     <div class="qfundmgr" id="qFundMgr" style="display:none"></div>
     <div class="q5" id="q5" style="display:none"></div>
     <div class="qops" id="qOps" style="display:none"></div>
+  </div>
+</div>
+
+<!-- 微信入口首次引导气泡（更新后第一次打开，一次性；JS 定位到顶栏按钮下方） -->
+<div class="wx-guide-tip" id="wxTip" hidden data-page-node-id="wxTip001">
+  <div class="wt-title" data-page-node-id="wxTipTitle">微信入口上新 <span class="wt-new">NEW</span></div>
+  <button class="wt-x" data-act="dismissWxTip" title="知道了" aria-label="关闭提示" data-page-node-id="wxTipX">×</button>
+  <div class="wt-body" data-page-node-id="wxTipBody">手机上看持仓、看更新教程，点顶栏这个微信图标，公众号和小程序码都在里面。</div>
+  <div class="wt-ops" data-page-node-id="wxTipOps">
+    <button class="btn blue" data-act="openWechatFromTip" data-page-node-id="wxTipGo">去看看</button>
+    <button class="btn ghost" data-act="dismissWxTip" data-page-node-id="wxTipOk">知道了</button>
+  </div>
+</div>
+
+<!-- 微信入口弹窗：公众号 + 小程序双码，远程加载官方码（不打包进扩展，换码无需重新发版） -->
+<div class="mask" id="maskWechat" data-page-node-id="wxMask001">
+  <div class="modal wechat-modal" data-page-node-id="wxModal001">
+    <h3 data-page-node-id="wxTitle001">微信入口</h3>
+    <div class="wx-tip" data-page-node-id="wxTip001">手机上看持仓、看更新教程，扫码即可打开同名小程序与公众号。</div>
+    <div class="wx-grid" data-page-node-id="wxGrid001">
+      <div class="wx-card" data-page-node-id="wxCardOa">
+        <div class="wx-name" data-page-node-id="wxOaName">公众号</div>
+        <div class="wx-sub" data-page-node-id="wxOaSub">持仓小助手 · 教程与更新</div>
+        <div class="wx-qr-wrap noimg" id="wxOaWrap" data-page-node-id="wxOaWrap">
+          <img class="wx-qr" id="wxOaImg" alt="公众号二维码" data-page-node-id="wxOaImg">
+          <div class="wx-fallback" data-page-node-id="wxOaFb">二维码加载失败<br>请到官网查看</div>
+        </div>
+      </div>
+      <div class="wx-card" data-page-node-id="wxCardMini">
+        <div class="wx-name" data-page-node-id="wxMiniName">小程序</div>
+        <div class="wx-sub" data-page-node-id="wxMiniSub">同名小程序 · 手机看持仓</div>
+        <div class="wx-qr-wrap noimg" id="wxMiniWrap" data-page-node-id="wxMiniWrap">
+          <img class="wx-qr" id="wxMiniImg" alt="小程序码" data-page-node-id="wxMiniImg">
+          <div class="wx-fallback" data-page-node-id="wxMiniFb">小程序码加载失败<br>请到官网查看</div>
+        </div>
+
+      </div>
+    </div>
+    <div class="wx-copy-bar" data-page-node-id="wxCopyBar001">
+      <span class="wx-copy-txt" data-page-node-id="wxCopyTxt001">扫码打开小程序 → 复制持仓 → 粘贴导入</span>
+      <button class="wx-mini-copy" data-act="copyForMini" data-page-node-id="wxMiniCopy001">复制给小程序</button>
+    </div>
+    <div class="wx-foot" data-page-node-id="wxFoot001">数据仅存本地、不自动同步；小程序为独立渠道。</div>
+    <div class="ops" style="margin-top:14px;" data-page-node-id="wxOps001">
+      <button class="btn ghost" data-act="closeWechat" data-page-node-id="wxClose001">关闭</button>
+    </div>
+  </div>
+</div>
+
+<!-- 复制成功后的跨端步骤引导卡：说明电脑剪贴板→手机粘贴的完整路径 -->
+<div class="mask" id="maskCopyGuide" style="z-index:130;" data-page-node-id="cgMask001">
+  <div class="modal copy-guide-modal" data-page-node-id="cgModal001">
+    <h3 data-page-node-id="cgTitle001">已复制，去手机粘贴</h3>
+    <div class="cg-lead" data-page-node-id="cgLead001">已把 <b id="cgCount">持仓</b> 复制到<strong>电脑剪贴板</strong>。手机和电脑的剪贴板不互通，请按下面三步导入小程序：</div>
+    <div class="cg-step" data-page-node-id="cgStep001"><div class="cg-num">1</div><div class="cg-txt">在电脑上打开微信「<span class="hl">文件传输助手</span>」，把刚复制的内容粘贴发送。</div></div>
+    <div class="cg-step" data-page-node-id="cgStep002"><div class="cg-num">2</div><div class="cg-txt">在手机上打开这条消息，<span class="hl">长按文字 → 复制</span>。</div></div>
+    <div class="cg-step" data-page-node-id="cgStep003"><div class="cg-num">3</div><div class="cg-txt">手机打开同名小程序 → 导入页 → 点「<span class="hl">从剪贴板粘贴</span>」完成导入。</div></div>
+    <div class="cg-note" data-page-node-id="cgNote001">小技巧：用<strong>电脑版微信</strong>打开小程序，可直接粘贴，跳过第 1、2 步。</div>
+    <div class="ops" style="margin-top:16px;" data-page-node-id="cgOps001">
+      <button class="btn blue" data-act="closeCopyGuide" data-page-node-id="cgOk001">知道了</button>
+    </div>
   </div>
 </div>
 

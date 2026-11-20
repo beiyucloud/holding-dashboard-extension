@@ -349,7 +349,7 @@ function bkCalcFundPnl(h,fundInfo,fx){
   else if(info.estType==='yNav'&&info.gszzl!=null){ r.pnl=mv*info.gszzl/100; }
   else if(info.gsz!=null&&info.dwjz!=null){ r.pnl=h.shares*(info.gsz-info.dwjz); }
   else if(info.gszzl!=null){ r.pnl=mv*info.gszzl/100; }
-  if(h.cost!=null&&info.dwjz!=null){ var cb=h.shares*h.cost; r.cum=h.shares*info.dwjz-cb; }
+  if(h.cost!=null&&info.dwjz!=null){ var cb=h.shares*h.cost; r.cum=h.shares*info.dwjz-cb+(Number(h.dividend)||0); }
   return r;
 }
 function bkCalcStockPnl(s,stockInfo,fx){

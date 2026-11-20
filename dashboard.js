@@ -280,6 +280,7 @@ function normRealized(x){
   if(x && typeof x === 'object'){
     if(typeof x.realized !== 'number' || isNaN(x.realized)) x.realized = 0;
     if(typeof x.tCount !== 'number' || isNaN(x.tCount)) x.tCount = 0;
+    if(typeof x.dividend !== 'number' || isNaN(x.dividend)) x.dividend = 0;   /* 累计分红：计入总回报 */
   }
   return x;
 }
@@ -470,8 +471,9 @@ function calcRow(h, info){
     }
     if(h.cost && settledMv !== null){
       var cb = h.shares * h.cost;
-      r.cumPnl = settledMv - cb;
-      r.cumPct = (settledMv / cb - 1) * 100;
+      var div = Number(h.dividend) || 0;   /* 累计分红：计入总回报，与基金 App 口径一致 */
+      r.cumPnl = settledMv - cb + div;
+      r.cumPct = ((settledMv + div) / cb - 1) * 100;
     }
   }else{
     r.mv = h.amount || null;
@@ -2246,6 +2248,7 @@ function openModal(code){
   $('#inShares').value = h && h.shares ? h.shares : '';
   $('#inCost').value = h && h.cost ? h.cost : '';
   $('#inAmount').value = h && h.amount ? h.amount : '';
+  $('#inDividend').value = h && h.dividend ? h.dividend : '';
   _renderRealizedRow(h);
   $('#mask').classList.add('show');
   if(!h) $('#inCode').focus();
@@ -2290,7 +2293,7 @@ function closeModal(){
   $('#mask').classList.remove('show');
   $('#inCode').value=''; $('#inCode').disabled=false;
   $('#inName').value='';
-  $('#inShares').value=''; $('#inCost').value=''; $('#inAmount').value='';
+  $('#inShares').value=''; $('#inCost').value=''; $('#inAmount').value=''; $('#inDividend').value='';
   var _rr = $('#realizedRow'); if(_rr) _rr.style.display = 'none';
   editingCode = null;
 }
@@ -2299,6 +2302,7 @@ function saveFund(){
   var shares = parseFloat($('#inShares').value);
   var cost = parseFloat($('#inCost').value);
   var amount = parseFloat($('#inAmount').value);
+  var dividend = parseFloat($('#inDividend').value);
   var name = $('#inName').value.trim();
   if(!/^\d{6}$/.test(code)){ alert('请输入 6 位基金代码'); return; }
   var hasShares = !isNaN(shares) && shares > 0;
@@ -2310,6 +2314,7 @@ function saveFund(){
     shares: hasShares ? shares : null,
     cost: (hasShares && !isNaN(cost) && cost > 0) ? cost : null,
     amount: (!isNaN(amount) && amount > 0) ? amount : null,
+    dividend: (!isNaN(dividend) && dividend > 0) ? dividend : 0,
     realized: oldH ? (oldH.realized || 0) : 0,
     tCount: oldH ? (oldH.tCount || 0) : 0
   };
@@ -2996,6 +3001,7 @@ function batchRowHtml(h){
        + '<td><input data-f="shares" type="number" value="' + (h.shares || '') + '" placeholder="选填"></td>'
        + '<td><input data-f="cost" type="number" step="0.0001" value="' + (h.cost || '') + '" placeholder="选填"></td>'
        + '<td><input data-f="amount" type="number" value="' + (h.amount || '') + '" placeholder="无份额时必填"></td>'
+       + '<td><input data-f="dividend" type="number" step="0.01" value="' + (h.dividend || '') + '" placeholder="选填"></td>'
        + '<td><span class="row-del" data-act="rowDel" data-args=\'["event"]\'>删除</span></td>';
 }
 /* 股票批量编辑行：用户输 6 位数字，保存时 normStockCode 自动加 sh/sz 前缀 */
@@ -3089,6 +3095,7 @@ function saveBatch(){
     var shares = parseFloat(get('shares'));
     var cost = parseFloat(get('cost'));
     var amount = parseFloat(get('amount'));
+    var dividend = parseFloat(get('dividend'));
     var hasShares = !isNaN(shares) && shares > 0;
     if(!hasShares && (isNaN(amount) || amount <= 0)){
       alert('第 ' + (i+1) + ' 行（' + code + '）需填「持有份额」或「持有市值」至少一项'); return;
@@ -3099,6 +3106,7 @@ function saveBatch(){
       shares: hasShares ? shares : null,
       cost: (hasShares && !isNaN(cost) && cost > 0) ? cost : null,
       amount: (!isNaN(amount) && amount > 0) ? amount : null,
+      dividend: (isNaN(dividend) || dividend <= 0) ? (oldH ? (oldH.dividend || 0) : 0) : dividend,
       realized: oldH ? (oldH.realized || 0) : 0,
       tCount: oldH ? (oldH.tCount || 0) : 0
     };
@@ -5080,6 +5088,76 @@ function toggleRowMute(kind, code, muted){
 function closeAlerts(){
   $('#maskAlert').classList.remove('show'); updateAlertBadge();
 }
+/* 微信入口弹窗：公众号 + 小程序双码。码图不打包进扩展，运行时从官网主源拉取
+   （自定义域为可用主源，pages.dev 备源保留），以后换码只换官网图片、无需重新发版。 */
+var WECHAT_QR_URLS = {
+  oa: ['https://beiyucloud.taoxinyuan.com/wechat-qr.jpg', 'https://beiyucloud.pages.dev/wechat-qr.jpg'],
+  mini: ['https://beiyucloud.taoxinyuan.com/miniprogram-qr.jpg', 'https://beiyucloud.pages.dev/miniprogram-qr.jpg']
+};
+var wechatQrLoaded = false;
+function openWechat(){ $('#maskWechat').classList.add('show'); loadWechatQr(); }
+function closeWechat(){ $('#maskWechat').classList.remove('show'); }
+function loadWechatQr(){
+  if(wechatQrLoaded) return;
+  wechatQrLoaded = true;
+  loadOneQr('oa', '#wxOaImg', '#wxOaWrap');
+  loadOneQr('mini', '#wxMiniImg', '#wxMiniWrap');
+}
+function loadOneQr(key, imgSel, wrapSel){
+  var img = $(imgSel), wrap = $(wrapSel);
+  if(!img || !wrap) return;
+  wrap.classList.add('noimg');
+  var urls = WECHAT_QR_URLS[key] || [], idx = 0;
+  var tryNext = function(){
+    if(idx >= urls.length) return;
+    var probe = new Image();
+    probe.onload = function(){ img.src = probe.src; wrap.classList.remove('noimg'); };
+    probe.onerror = tryNext;
+    probe.src = urls[idx++];
+  };
+  tryNext();
+}
+
+/* 微信入口首次引导：更新后第一次打开，在顶栏按钮下方弹气泡指向它；看过后写 localStorage，永不再弹。
+   widget 窄组件模式不弹。定位跟随按钮（getBoundingClientRect），窗口 resize 重定位。 */
+var WX_TIP_KEY = 'wxEntryTipSeen_v186';
+function wxTipSeen(){ try{ return localStorage.getItem(WX_TIP_KEY) === '1'; }catch(e){ return false; } }
+function positionWxTip(){
+  var btn = document.querySelector('[data-act="openWechat"]'), tip = document.getElementById('wxTip');
+  if(!btn || !tip) return;
+  var r = btn.getBoundingClientRect();
+  var tw = 252, left = r.right - tw;
+  if(left < 8) left = 8;
+  if(left + tw > window.innerWidth - 8) left = window.innerWidth - tw - 8;
+  tip.style.left = left + 'px';
+  tip.style.top = (r.bottom + 10) + 'px';
+  /* 箭头水平对准按钮中心 */
+  tip.style.setProperty('--wx-arrow', Math.max(12, Math.min(tw - 18, r.left + r.width / 2 - left - 6)) + 'px');
+}
+function showWxTip(){
+  if(document.body.classList.contains('widget-mode')) return;   /* 窄组件不弹 */
+  if(wxTipSeen()) return;                                        /* 看过一次就不再弹 */
+  var tip = document.getElementById('wxTip');
+  if(!tip) return;
+  tip.hidden = false;
+  positionWxTip();
+  var btn = document.querySelector('[data-act="openWechat"]');
+  if(btn) btn.classList.add('wx-hl');
+}
+function dismissWxTip(){
+  var tip = document.getElementById('wxTip');
+  if(tip) tip.hidden = true;
+  var btn = document.querySelector('[data-act="openWechat"]');
+  if(btn) btn.classList.remove('wx-hl');
+  try{ localStorage.setItem(WX_TIP_KEY, '1'); }catch(e){}
+}
+function openWechatFromTip(){ dismissWxTip(); openWechat(); }
+window.addEventListener('resize', function(){
+  var tip = document.getElementById('wxTip');
+  if(tip && !tip.hidden) positionWxTip();
+});
+setTimeout(showWxTip, 2500);   /* 等首屏数据刷完再弹，不糊脸 */
+
 /* 打赏弹窗（点击顶部「打赏」按钮弹出，显示微信赞赏码） */
 function openDonate(){ $('#maskDonate').classList.add('show'); loadDonateQr(); }
 function closeDonate(){ $('#maskDonate').classList.remove('show'); }
@@ -5342,39 +5420,94 @@ function clickImportFile(){
   var inp = document.getElementById('importFile');
   if(inp) inp.click();
 }
+/* 构造导出文本（下载 / 复制给小程序 共用同一份，保证格式一致） */
+function buildExportJson(){
+  /* 小程序导入识别：每条持仓都带 name（优先持仓里已存的简称；缺失时用行情缓存兜底） */
+  var fundsOut = holdings.map(function(h){
+    var o = Object.assign({}, h);
+    if(!o.name){ var fi = fundInfo[h.code]; if(fi && fi.name) o.name = fi.name; }
+    return o;
+  });
+  var stocksOut = stocks.map(function(s){
+    var o = Object.assign({}, s);
+    if(!o.name){ var si = stockInfo[s.code]; if(si && si.name) o.name = si.name; }
+    return o;
+  });
+  return JSON.stringify({funds: fundsOut, stocks: stocksOut, idxConfig: loadIdxConfig()}, null, 2);
+}
 function exportData(){
-  var blob = new Blob([JSON.stringify({funds: holdings, stocks: stocks, idxConfig: loadIdxConfig()}, null, 2)], {type:'application/json'});
+  var blob = new Blob([buildExportJson()], {type:'application/json'});
   var a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
   a.download = 'fund_holdings.json';
   a.click();
   URL.revokeObjectURL(a.href);
 }
+/* 复制给小程序：写同一份 JSON 到系统剪贴板，不经过任何服务器 */
+/* 复制成功后弹跨端步骤引导卡：说明电脑剪贴板→手机粘贴路径 */
+function openCopyGuide(n){
+  var c = $('#cgCount');
+  if(c) c.textContent = (n || 0) + ' 条持仓';
+  $('#maskCopyGuide').classList.add('show');
+}
+function closeCopyGuide(){ $('#maskCopyGuide').classList.remove('show'); }
+function copyForMini(){
+  var text = buildExportJson();
+  var done = function(){ openCopyGuide(holdings.length + stocks.length); };
+  var fail = function(){ fallbackCopy(text, done); };
+  if(navigator.clipboard && navigator.clipboard.writeText){
+    navigator.clipboard.writeText(text).then(done).catch(fail);
+  } else fail();
+}
+/* 旧浏览器/无 clipboard API 时的兜底：临时 textarea + execCommand */
+function fallbackCopy(text, cb){
+  try{
+    var ta = document.createElement('textarea');
+    ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0';
+    document.body.appendChild(ta); ta.select();
+    var ok = document.execCommand('copy');
+    document.body.removeChild(ta);
+    ok ? cb() : toast('复制失败，请点「导出」用文件方式');
+  }catch(e){ toast('复制失败，请点「导出」用文件方式'); }
+}
+/* 从小程序粘贴：读剪贴板文本，走与文件导入同一套解析 */
+function pasteFromMini(){
+  var apply = function(text){
+    if(!text || !text.trim()){ toast('剪贴板是空的，请先在小程序复制持仓文本'); return; }
+    applyImportText(text);
+  };
+  if(navigator.clipboard && navigator.clipboard.readText){
+    navigator.clipboard.readText().then(apply).catch(function(){ toast('读取剪贴板失败，请检查扩展权限或用「导入」按钮'); });
+  } else toast('当前浏览器不支持读剪贴板，请用「导入」按钮');
+}
 function importData(ev){
   var f = ev.target.files[0];
   if(!f) return;
   var r = new FileReader();
-  r.onload = function(){
+  r.onload = function(){ applyImportText(r.result); };
+  r.readAsText(f);
+  ev.target.value = '';
+}
+/* 导入文本解析（文件导入 / 从小程序粘贴 共用） */
+function applyImportText(raw){
     try{
-      var data = JSON.parse(r.result);
+      var data = JSON.parse(raw);
       var fundArr, stkArr = [];
       if(Array.isArray(data)){ fundArr = data; }        /* 旧格式：纯基金数组 */
       else if(data && Array.isArray(data.funds)){ fundArr = data.funds; stkArr = Array.isArray(data.stocks) ? data.stocks : []; }
       else{ throw new Error('bad'); }
       holdings = fundArr.filter(function(x){ return /^\d{6}$/.test(x.code) && (x.amount > 0 || x.shares > 0); })
-                     .map(function(x){ return {code: x.code, name: typeof x.name === 'string' ? x.name.trim().slice(0, 40) || undefined : undefined, shares: x.shares > 0 ? x.shares : null, cost: x.cost > 0 ? x.cost : null, amount: x.amount > 0 ? x.amount : null}; });
+                     .map(function(x){ return {code: x.code, name: typeof x.name === 'string' ? x.name.trim().slice(0, 40) || undefined : undefined, shares: x.shares > 0 ? x.shares : null, cost: x.cost > 0 ? x.cost : null, amount: x.amount > 0 ? x.amount : null, dividend: x.dividend > 0 ? x.dividend : 0}; });
       stocks = stkArr.filter(function(x){ return normStockCode(x.code) && x.shares > 0; })
-                     .map(function(x){ var c = normStockCode(x.code); return {code: c, shares: x.shares, cost: x.cost > 0 ? x.cost : null, type: classifyStockType(c).cls}; });
+                     .map(function(x){ var c = normStockCode(x.code); return {code: c, name: typeof x.name === 'string' ? x.name.trim().slice(0, 40) || undefined : undefined, shares: x.shares, cost: x.cost > 0 ? x.cost : null, type: classifyStockType(c).cls}; });
       if(Array.isArray(data.idxConfig) && data.idxConfig.length > 0 && data.idxConfig.length <= 7){
         var valid = new Set(IDX_ALL.map(function(x){ return x.code; }));
         var filtered = data.idxConfig.filter(function(c){ return valid.has(c); });
         if(filtered.length > 0) saveIdxConfig(filtered);
       }
       saveHoldings(); saveStocks(); refreshAll();
+      toast('导入完成：基金 ' + holdings.length + ' / 股票 ' + stocks.length);
     }catch(e){ alert('导入失败：文件格式不正确'); }
-  };
-  r.readAsText(f);
-  ev.target.value = '';
 }
 
 updateAlertBadge();

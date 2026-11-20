@@ -149,8 +149,9 @@
     }
     if (h.cost != null && info.dwjz != null) {
       var cb = h.shares * h.cost;
-      r.cum = h.shares * info.dwjz - cb;
-      r.cumPct = cb ? r.cum / cb * 100 : null;
+      var div = Number(h.dividend) || 0;
+      r.cum = h.shares * info.dwjz - cb + div;
+      r.cumPct = cb ? ((h.shares * info.dwjz + div) / cb - 1) * 100 : null;
     }
     return r;
   }
